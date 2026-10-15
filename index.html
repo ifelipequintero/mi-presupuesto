@@ -318,6 +318,8 @@ const RULES = {
     why:'La tasa de ahorro es lo que más acorta el camino: ahorrando 30 % podrías vivir de tus inversiones en unos 28 años, frente a unos 43 ahorrando 15 % (regla del 4 % y 5 % de rentabilidad real).'}
 };
 const RULE_KEYS = ['min','balanced','fast'];
+RULES.custom = {name:'Personalizado', n:50, g:30, s:20, why:'Tu propia combinación, creada al subir tu % de ahorro desde Inicio.'};
+const ruleKeysShown = opts => opts && opts.custom ? [...RULE_KEYS,'custom'] : RULE_KEYS;
 const BUCKET = {n:'Necesidades', g:'Gustos', s:'Ahorro e inversión'};
 const defaultRule = () => ({active:'balanced', opts:Object.fromEntries(RULE_KEYS.map(k=>[k,{n:RULES[k].n, g:RULES[k].g, s:RULES[k].s}]))});
 const defaultAccounts = (rate=10, initial=0) => [
@@ -533,6 +535,11 @@ function mergeSettings(d){
   d = d || {};
   const rule = {...def.rule, ...(d.rule||{}), opts:{...def.rule.opts, ...((d.rule||{}).opts||{})}};
   if (!RULES[rule.active]) rule.active='balanced';
+  if (!d.ruleFix1){
+    for (const k of RULE_KEYS) rule.opts[k]={n:RULES[k].n, g:RULES[k].g, s:RULES[k].s};
+    delete rule.undo; if (rule.active==='custom' && !rule.opts.custom) rule.active='balanced';
+    d = {...d, ruleFix1:true};
+  }
   const dg = d.goal || {};
   const g = {...def.goal, ...dg};
   if (!Array.isArray(dg.accounts) || !dg.accounts.length) g.accounts = defaultAccounts(dg.rate!=null ? Number(dg.rate)||0 : 10, Number(dg.initial)||0);
@@ -905,7 +912,8 @@ function ruleCard(m,k,t){
   const reaches = G.paceP>0 && isFinite(G.pace) && G.si+G.pace<=G.ei;
   const undo = S.settings.rule && S.settings.rule.undo;
   const fix = pctNeed>r.s && pctNeed<=100 ? `<div class="btnrow"><button class="btn tint small" data-act="ruleSetS" data-v="${pctNeed}">Subir mi ahorro a ${pctNeed} %</button></div>` : '';
-  const undoBtn = undo ? `<div class="btnrow"><button class="btn tint small" data-act="ruleUndo">↩︎ Volver a ${undo.o.n}/${undo.o.g}/${undo.o.s}</button></div>` : '';
+  const uo = undo && S.settings.rule.opts[undo.key];
+  const undoBtn = undo && uo ? `<div class="btnrow"><button class="btn tint small" data-act="ruleUndo">↩︎ Volver a ${esc(RULES[undo.key].name)} ${uo.n}/${uo.g}/${uo.s}</button></div>` : '';
   let tie;
   if (lim.s >= needB-0.5)
     tie=`<b class="green">Tu plan alcanza para tu meta.</b> Tu meta pide ${money(needB)} al mes y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}.${lim.s-needB>0.5?` Lo que sobra (${money(lim.s-needB)}) puede ir a tu fondo de emergencia.`:''}`;
@@ -1306,14 +1314,15 @@ function sheetHtml(){
     title='Plan de ahorro';
     const total=(parseNum(d.n)||0)+(parseNum(d.g)||0)+(parseNum(d.s)||0);
     body = `<p class="foot" style="padding:4px 4px 0;font-size:15px">Elige cómo repartir lo que ganas cada mes. Los tres planes se basan en guías conocidas de ahorro e inversión; puedes ajustar los porcentajes.</p>
-      <div class="sec" style="margin-top:14px"><div class="list">${RULE_KEYS.map(k=>{ const o=d.opts[k]; return `<button class="cell" data-act="ruleOpt" data-v="${k}" style="align-items:flex-start">
+      <div class="sec" style="margin-top:14px"><div class="list">${ruleKeysShown(d.opts).map(k=>{ const o=d.opts[k]; return `<button class="cell" data-act="ruleOpt" data-v="${k}" style="align-items:flex-start">
         <div class="main"><div class="t" style="font-weight:600">${RULES[k].name} <span class="muted" style="font-weight:400">${o.n}/${o.g}/${o.s}</span></div><div class="s" style="white-space:normal;line-height:1.35">${esc(RULES[k].why)}</div></div>
         <span style="color:var(--blue);font-size:20px;width:20px;text-align:center">${d.active===k?'✓':''}</span></button>`;}).join('')}</div></div>
       <div class="sec"><div class="sech"><span>Ajustar ${esc(RULES[d.active].name)}</span><b class="${Math.abs(total-100)>0.01?'red':''}">Suma ${total} %</b></div><div class="list">
         <div class="cell"><label for="r-n">Necesidades</label><input id="r-n" inputmode="decimal" value="${esc(d.n)}" data-draft="n" autocomplete="off"><span class="muted">%</span></div>
         <div class="cell"><label for="r-g">Gustos</label><input id="r-g" inputmode="decimal" value="${esc(d.g)}" data-draft="g" autocomplete="off"><span class="muted">%</span></div>
         <div class="cell"><label for="r-s">Ahorro e inversión</label><input id="r-s" inputmode="decimal" value="${esc(d.s)}" data-draft="s" autocomplete="off"><span class="muted">%</span></div>
-        <button class="cell blue" data-act="ruleReset">Volver a los valores recomendados</button>
+        ${d.active!=='custom' ? `<button class="cell blue" data-act="ruleReset">Volver a los valores recomendados de este plan</button>` : ''}
+        <button class="cell blue" data-act="ruleResetAll">Restablecer los 3 planes recomendados</button>
       </div>${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
       <div class="foot"><b>Necesidades:</b> lo que pagas sí o sí (arriendo, servicios, mercado, transporte, cuotas de deudas). <b>Gustos:</b> lo que podrías recortar (restaurantes, salidas, ropa, suscripciones). <b>Ahorro:</b> fondo de emergencia e inversión. Para cambiar el tipo de una categoría, tócala en Inicio.</div></div>
       <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">Usar este plan</button></div>`;
@@ -1498,9 +1507,14 @@ document.addEventListener('click', e => {
     case 'addAcctLine': { const m=getMonth(S.cur,true), it=ensureAcctItem(m,b.dataset.v); saveMonth(S.cur); openItem('invest', it.id); break; }
     case 'acct': openAcct(b.dataset.id); break;
     case 'newAcct': S.sheet=null; openAcct(null); break;
-    case 'ruleUndo': { const r=S.settings.rule; if (r.undo){ r.opts[r.undo.key]={...r.undo.o}; r.active=r.undo.key; delete r.undo; saveSettings(); toast('Plan de ahorro como estaba'); } break; }
-    case 'ruleSetS': { const r=S.settings.rule, o=r.opts[r.active], ns=Number(b.dataset.v); r.undo={key:r.active, o:{...o}}; let extra=ns-o.s;
-      const fromG=Math.min(o.g,extra); o.g-=fromG; extra-=fromG; o.n=Math.max(0,o.n-extra); o.s=ns; saveSettings(); toast(`Ahorro subido a ${ns} %`); break; }
+    case 'ruleUndo': { const r=S.settings.rule; if (r.undo){ r.active = RULES[r.undo.key] ? r.undo.key : 'balanced'; delete r.undo; saveSettings(); toast(`Volviste a ${RULES[r.active].name}`); } break; }
+    case 'ruleSetS': { const r=S.settings.rule, cur=activeRule(), ns=Number(b.dataset.v);
+      // the recommended plans stay untouched: the raise lives in "Personalizado", and you can go back
+      const o={n:cur.n, g:cur.g, s:cur.s}; let extra=ns-o.s; const fromG=Math.min(o.g,extra); o.g-=fromG; extra-=fromG; o.n=Math.max(0,o.n-extra); o.s=ns;
+      if (r.active!=='custom') r.undo={key:r.active};
+      r.opts.custom=o; r.active='custom'; saveSettings(); toast(`Ahorro subido a ${ns} % (plan Personalizado)`); break; }
+    case 'ruleResetAll': { const d=S.sheet.draft; for (const k of RULE_KEYS) d.opts[k]={n:RULES[k].n, g:RULES[k].g, s:RULES[k].s};
+      if (d.active!=='custom'){ const o=d.opts[d.active]; d.n=String(o.n); d.g=String(o.g); d.s=String(o.s); } S.sheet.err=null; toast('Planes recomendados restablecidos'); break; }
     case 'acctTx2': openTx(null,{kind:'inv', acct:b.dataset.v}); break;
     case 'acctTx': { const id=S.sheet.id; S.sheet=null; openTx(null,{kind:'inv', acct:id}); break; }
     case 'acctDelete': {
