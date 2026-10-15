@@ -991,8 +991,18 @@ function viewGoal(){
   const g=goalStats(), {gl, gc, v}=g, hasGoal=g.goalAccts.length>0;
   const pct=Math.max(0,Math.min(100, v/gl.target*100));
   const diff=g.have-g.expected, tol=gl.target*0.005;
-  const status = !hasGoal ? ['warn','Sin cuentas en la meta'] : g.done===0 ? ['ok','Recién empiezas'] : diff>=tol ? ['ok','Vas adelantado'] : diff>=-tol ? ['ok','Vas al día'] : diff>=-g.planP*2 ? ['warn','Un poco atrasado'] : ['bad','Vas atrasado'];
   const R=34, C=2*Math.PI*R, endName=monthName(keyOf(g.ei-1)), prevName=monthName(keyOf(g.si-1));
+  // one verdict: the future (your current aporte) decides; the past (original plan) only explains
+  const hasPace = g.pace!=null && g.paceP>0;
+  const reaches = hasPace && isFinite(g.pace) && g.si+g.pace<=g.ei;
+  const status = !hasGoal ? ['warn','Sin cuentas en la meta']
+    : hasPace ? (reaches ? ['ok','Llegas a tiempo'] : ['bad','Así no llegas a tiempo'])
+    : g.done===0 ? ['ok','Recién empiezas'] : diff>=-tol ? ['ok','Vas al día'] : ['warn','Vas por debajo del plan'];
+  const pastTxt = g.done===0 ? '' : Math.abs(diff)<=tol ? 'Vas justo como pedía tu plan original.'
+    : `Frente a tu plan original vas <b class="${diff>0?'green':'red'}">${money(Math.abs(diff),gc)} ${diff>0?'por encima':'por debajo'}</b> (deberías tener ${money(g.expected,gc)} y tienes ${money(g.have,gc)}).`;
+  const futureTxt = !hasPace ? 'Pon abajo cuánto sueles aportar al mes y te digo si llegas a tiempo.'
+    : reaches ? `Aportando ${money(g.paceP,gc)} al mes llegas en ${esc(monthName(keyOf(g.si+g.pace)))}${g.si+g.pace<g.ei-1?`, antes de tu fecha (${esc(endName)})`:''}.${diff< -tol ? ' Ese aporte compensa lo que te atrasaste.' : ''}`
+    : `Aportando ${money(g.paceP,gc)} al mes ${isFinite(g.pace) ? `llegarías en ${esc(monthName(keyOf(g.si+g.pace)))}, después de tu fecha` : 'no llegas'}. Para llegar en ${esc(endName)} necesitas ${money(g.need,gc)} al mes.`;
   const paceOk = g.pace!=null && isFinite(g.pace) && g.si+g.pace<=g.ei;
   const totalPos = sum(g.accts.map(x=>Math.max(0,x.now)))||1;
   const allKnown = g.accts.every(x=>x.known);
@@ -1030,9 +1040,9 @@ function viewGoal(){
 
   <div class="sec"><div class="sech"><span>¿Cómo vas con tu meta?</span></div>${hasGoal ? `<div class="card">
     <span class="pill ${status[0]}" style="margin:0">${status[1]}</span>
-    <div style="margin-top:10px;line-height:1.4">${g.done===0 ? `Tu plan arranca en ${esc(monthName(keyOf(g.s0)))}. Desde el próximo mes te digo si vas al día.`
-      : `Para llegar a tiempo, al cierre de ${esc(prevName)} deberías tener <b class="n">${money(g.expected,gc)}</b>. Tienes <b class="n">${money(g.have,gc)}</b>${Math.abs(diff)>tol?`, o sea <b class="${diff>0?'green':'red'}">${money(Math.abs(diff),gc)} ${diff>0?'por encima':'por debajo'}</b> del plan`:''}.`}</div>
-  </div><div class="foot">El plan es aportar ${money(g.planP,gc)} al mes desde ${esc(monthName(keyOf(g.s0)))}. Al principio la plata crece despacio y al final mucho más rápido por el interés compuesto; por eso comparo contra esa curva y no contra el tiempo que ha pasado.</div>` : noGoal}</div>
+    <div style="margin-top:10px;line-height:1.45">${futureTxt}</div>
+    ${pastTxt ? `<div class="s" style="margin-top:8px">${pastTxt}</div>` : ''}
+  </div><div class="foot">Se recalcula sola cada vez que abres la app, con tus aportes registrados, los saldos reales que pongas y la tasa de cada cuenta. El veredicto depende de tu aporte de ahora; el plan original (${money(g.planP,gc)} al mes desde ${esc(monthName(keyOf(g.s0)))}) es solo referencia.</div>` : noGoal}</div>
 
   ${hasGoal ? `<div class="sec"><div class="sech"><span>Este mes</span></div><div class="list">
     <div class="cell"><div class="main">Debes aportar<div class="s">Para llegar en ${esc(endName)}</div></div><div class="v" style="font-weight:600">${money(g.need,gc)}</div></div>
@@ -1046,7 +1056,7 @@ function viewGoal(){
     ${g.paceP==null ? `<p class="empty" style="padding:16px">Escribe arriba cuánto sueles aportar al mes a tu meta y te digo cuándo llegas.</p>` : `
     <div class="cell"><div class="main">Llegas en<div class="s">Usando ${esc(g.paceSrc)}</div></div><div class="v" style="font-weight:600">${isFinite(g.pace)?fmtMonths(g.pace):'No llegas'}</div></div>
     ${isFinite(g.pace)?`<div class="cell"><div class="main">Fecha estimada</div><div class="v">${esc(monthName(keyOf(g.si+g.pace)))}</div></div>`:''}`}
-  </div>${g.paceP!=null?`<div class="foot">${paceOk?`<span class="green">Llegas antes o a tiempo (${esc(endName)}).</span>`:`<span class="orange">A ese ritmo no llegas en tu fecha.</span> Necesitas ${money(g.need,gc)} al mes, o ampliar el plazo.`} Si lo dejas vacío, uso el promedio de tus aportes registrados.</div>`:''}</div>` : ''}
+  </div>${g.paceP!=null?`<div class="foot">Si lo dejas vacío, uso el promedio de tus aportes registrados. Cambiarlo actualiza el veredicto de arriba.</div>`:''}</div>` : ''}
 
   <div class="sec"><div class="sech"><span>De dónde sale tu plata</span></div><div class="list">
     ${g.accts.map(x=>`<div class="cell">${avatar(x.a.emoji||'💰',x.color,'sm')}<div class="main">${esc(x.a.name)}<div class="s">Pusiste ${money(x.pocket,x.cur)}</div></div><div class="v">${money(x.nowN,x.cur)}<small class="${x.known?(x.gain>=0?'green':'red'):''}">${x.known ? (x.gain>=0?'+':'−')+money(Math.abs(x.gain),x.cur) : 'rendimiento ?'}</small></div></div>`).join('')}
