@@ -19,7 +19,7 @@
   --bg:#F2F2F7; --card:#FFFFFF; --card2:#F2F2F7; --sep:rgba(60,60,67,.16);
   --label:#000000; --label2:rgba(60,60,67,.62); --label3:rgba(60,60,67,.32); --fill:rgba(118,118,128,.14);
   --blue:#007AFF; --green:#34C759; --red:#FF3B30; --orange:#FF9500; --on:#FFFFFF;
-  --inv:#5856D6; --spend:#8E8E93;
+  --inv:#5856D6; --spend:#FFCC00;
   --bar:rgba(249,249,249,.86); --shade:rgba(0,0,0,.32);
   --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
 }
@@ -27,13 +27,13 @@
   --bg:#000000; --card:#1C1C1E; --card2:#2C2C2E; --sep:rgba(84,84,88,.55);
   --label:#FFFFFF; --label2:rgba(235,235,245,.62); --label3:rgba(235,235,245,.3); --fill:rgba(118,118,128,.28);
   --blue:#0A84FF; --green:#30D158; --red:#FF453A; --orange:#FF9F0A; --on:#FFFFFF;
-  --inv:#7D7AFF; --spend:#98989D;
+  --inv:#7D7AFF; --spend:#FFD60A;
   --bar:rgba(22,22,24,.86); --shade:rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#000000; --card:#1C1C1E; --card2:#2C2C2E; --sep:rgba(84,84,88,.55);
   --label:#FFFFFF; --label2:rgba(235,235,245,.62); --label3:rgba(235,235,245,.3); --fill:rgba(118,118,128,.28);
   --blue:#0A84FF; --green:#30D158; --red:#FF453A; --orange:#FF9F0A; --on:#FFFFFF;
-  --inv:#7D7AFF; --spend:#98989D;
+  --inv:#7D7AFF; --spend:#FFD60A;
   --bar:rgba(22,22,24,.86); --shade:rgba(0,0,0,.55); color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0}
@@ -295,7 +295,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '17';
+const APP_VERSION = '18';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
@@ -798,9 +798,9 @@ function viewHome(){
   const showTrm = usesUSD(m) || b==='USD';
   return `
   <section class="hero">
-    <div class="eyebrow">${avail>=0 ? 'Te queda este mes' : 'Gastaste más de lo que te llegó'}</div>
+    <div class="eyebrow">${avail>=0 ? 'Te queda este mes' : 'Te pasaste este mes por'}</div>
     <div class="big fit ${health.cls}">${moneyBig(Math.abs(avail))}</div>
-    <div class="s">${t.income[1]>0 ? `De ${money(t.income[1])} que te llegaron${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}${pending>0?`<br>Aún esperas ${money(pending)} más.`:''}${health.msg?`<br><span class="${health.cls}" style="font-weight:600">${health.msg}</span>`:''}</div>
+    <div class="s">${t.income[1]>0 ? `De ${money(t.income[1])} que te llegaron${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}</div>
     ${t.income[1]>0 || spentA>0 ? `<div class="segbar" aria-hidden="true"><i style="width:${(spentA/segBase*100).toFixed(2)}%;background:var(--spend)"></i><i style="width:${(t.invest[1]/segBase*100).toFixed(2)}%;background:var(--inv)"></i><i style="width:${(Math.max(0,avail)/segBase*100).toFixed(2)}%;background:var(--green)"></i></div>
       <div class="distleg"><span><span class="dot" style="background:var(--spend)"></span>Gastos</span><span><span class="dot" style="background:var(--inv)"></span>Inversión</span><span><span class="dot" style="background:var(--green)"></span>Te queda</span></div>` : ''}
     <div class="stats">
@@ -838,10 +838,10 @@ function budgetColumns(m,k){
     const hp=c.pl/max*H, ha=c.ac>0 ? Math.max(10, Math.min(c.ac,max)/max*H) : 0;
     return `<button class="colb" data-act="filterCat" data-v="${esc(c.it.id)}" aria-label="${esc(c.it.name)}: ${money(c.ac)} de ${money(c.pl)}">
       <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '&nbsp;'}</span>
-      <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':c.pl>0&&c.ac>c.pl*0.85?'var(--orange)':'color-mix(in srgb, var(--spend) 55%, var(--card))'}"></span></span>
+      <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':c.pl>0&&c.ac>c.pl*0.85?'var(--orange)':'var(--spend)'}"></span></span>
       ${avatar(emojiOf(c.it,c.kind), col, 'sm')}
       <span class="amt">${esc(moneyShort(c.ac))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(c.pl))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
-    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:color-mix(in srgb, var(--spend) 55%, var(--card))"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
+    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--spend)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
 }
 function donutCard(spend, total){
   const head=`<div class="sech"><span>¿En qué se te va la plata?</span></div>`;
@@ -1227,8 +1227,8 @@ function viewMore(){
   <div class="sec"><div class="sech"><span>🎨 Qué significa cada color</span></div><div class="list">
     <div class="cell"><span class="cdot" style="background:var(--green)"></span><div class="main">Verde<div class="s">Plata que entra y lo que te queda. Te recuerda que vas bien.</div></div></div>
     <div class="cell"><span class="cdot" style="background:var(--inv)"></span><div class="main">Índigo<div class="s">Tu inversión y tu meta: tu yo del futuro.</div></div></div>
-    <div class="cell"><span class="cdot" style="background:var(--spend)"></span><div class="main">Gris<div class="s">Gastos normales. Gastar no es malo; solo se registra.</div></div></div>
-    <div class="cell"><span class="cdot" style="background:var(--orange)"></span><div class="main">Ámbar<div class="s">Cuidado: estás cerca del límite o te queda poco del mes.</div></div></div>
+    <div class="cell"><span class="cdot" style="background:var(--spend)"></span><div class="main">Amarillo<div class="s">Lo que gastas. Atento, sin alarma: gastar no es malo.</div></div></div>
+    <div class="cell"><span class="cdot" style="background:var(--orange)"></span><div class="main">Naranja<div class="s">Cuidado: estás cerca del límite o te queda poco del mes.</div></div></div>
     <div class="cell"><span class="cdot" style="background:var(--red)"></span><div class="main">Rojo<div class="s">Exceso: te pasaste del límite o gastaste más de lo que te llegó.</div></div></div>
   </div><div class="foot">El rojo se usa poco a propósito, para que cuando aparezca te llame la atención. El azul solo marca botones.</div></div>
   <div class="sec"><div class="sech"><span>🎨 Apariencia</span></div><div class="list">
