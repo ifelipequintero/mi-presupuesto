@@ -282,6 +282,7 @@ button.stat:active{background:var(--fill)}
 
 .toast{display:flex;align-items:center;gap:12px}
 .toast button{color:var(--blue);font-weight:700}
+.goalbar .seg button{padding:3px 10px;font-size:13px}
 </style>
 </head>
 <body>
@@ -290,7 +291,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
@@ -881,9 +882,17 @@ function groupHtml(m,k,g,t){
     `<button class="cell" data-act="acctTx2" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<div class="main"><div class="t">Aporte a ${esc(a.name)}</div><div class="s">Toca para registrar un aporte</div></div></button>`).join('');
   const [pl,ac]=t[g.kind];
   const label = pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac);
-  const goalRow = g.kind==='invest' && accounts().length ? `<button class="cell" data-act="tab" data-v="goal">${avatar('🎯','#FF9F0A')}<div class="main"><div class="row1"><span class="t">Tu meta pide este mes</span><span class="v">${money(pl)}</span></div>
-      ${pl>0?`<div class="pbar"><i style="width:${Math.min(100,ac/pl*100).toFixed(1)}%;background:var(--orange)"></i></div>`:''}
-      <div class="row1 s"><span class="${ac>=pl?'green':''}">${ac>=pl ? 'Cumpliste el aporte del mes ✓' : `Te faltan ${money(pl-ac)}`}</span><span>se calcula con tu meta</span></div></div></button>` : '';
+  // progress toward this month's aporte, shown in the currency you pick (COP or USD); not a link
+  let goalRow='';
+  if (g.kind==='invest' && accounts().length){
+    const vc = S.settings.investView || base(), plV=conv(pl,base(),vc,trm), acV=conv(ac,base(),vc,trm), pct=plV>0?Math.min(100,acV/plV*100):100;
+    goalRow = `<div class="cell goalbar" style="display:block">
+      <div class="row1"><span class="t" style="font-weight:600">🎯 Aporte del mes</span>${seg('settings','investView',vc)}</div>
+      <div class="row1" style="margin-top:10px"><span class="v orange" style="font-size:20px">${money(acV,vc)}</span><span class="muted">de ${money(plV,vc)}</span></div>
+      <div class="meter" style="margin-top:8px"><i style="width:${pct.toFixed(1)}%"></i></div>
+      <div class="row1 s" style="margin-top:8px"><span class="${acV>=plV?'green':''}">${acV>=plV ? 'Cumpliste el aporte del mes ✓' : `Te faltan ${money(plV-acV,vc)}`}</span><span>${Math.round(pct)} %</span></div>
+    </div>`;
+  }
   return `<div class="sec"><div class="sech"><span>${GROUP_EMOJI[g.kind]} ${g.name}</span><b class="n">${label}</b></div>
     <div class="list">${goalRow}${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>
 </div>`;
