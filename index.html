@@ -196,8 +196,19 @@ const monthShort = k => dt(k,{month:'short',year:'numeric'});
 const dayLabel = d => { const [y,m,dd]=d.split('-').map(Number); const s=new Intl.DateTimeFormat('es-CO',{weekday:'long',day:'numeric',month:'long'}).format(new Date(y,m-1,dd)); return d===todayDate?'Hoy':s; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+const RULES = {
+  min:{name:'Mínimo saludable', n:60, g:25, s:15,
+    why:'Fidelity recomienda ahorrar al menos el 15 % de lo que ganas para tu retiro. Es el punto de partida si tus gastos fijos son altos.'},
+  balanced:{name:'Equilibrada', n:50, g:30, s:20,
+    why:'La regla 50/30/20 de Elizabeth Warren (libro “All Your Worth”, 2005): la mitad para lo necesario, 30 % para gustos y 20 % para ahorrar e invertir.'},
+  fast:{name:'Acelerada', n:50, g:20, s:30,
+    why:'La tasa de ahorro es lo que más acorta el camino: ahorrando 30 % podrías vivir de tus inversiones en unos 28 años, frente a unos 43 ahorrando 15 % (regla del 4 % y 5 % de rentabilidad real).'}
+};
+const RULE_KEYS = ['min','balanced','fast'];
+const BUCKET = {n:'Necesidades', g:'Gustos', s:'Ahorro e inversión'};
+const defaultRule = () => ({active:'balanced', opts:Object.fromEntries(RULE_KEYS.map(k=>[k,{n:RULES[k].n, g:RULES[k].g, s:RULES[k].s}]))});
 const defaultSettings = () => ({
-  currency:'COP', trm:4000, rules:'',
+  currency:'COP', trm:4000, rules:'', theme:'auto', trmMode:'auto', trmAuto:null, trmHist:{}, rule:defaultRule(),
   goal:{name:'Mi meta de inversión', target:100000000, cur:'COP', years:5, rate:10, initial:0, start:todayKey}
 });
 const S = { settings:defaultSettings(), months:{}, cur:todayKey, tab:'budget', mode:'loading', sheet:null, txFilter:'', toast:null, lastItem:null };
@@ -206,7 +217,7 @@ const S = { settings:defaultSettings(), months:{}, cur:todayKey, tab:'budget', m
 const CURS = ['COP','USD'];
 const base = () => S.settings.currency || 'COP';
 const gcur = () => S.settings.goal.cur || 'COP';
-const trmOf = k => { const m=S.months[k]; return Number(m && m.trm) || Number(S.settings.trm) || 4000; };
+const trmOf = k => { const m=S.months[k]; return Number(m && m.trm) || Number((S.settings.trmHist||{})[k]) || Number(S.settings.trm) || 4000; };
 const conv = (a, from, to, trm) => { a=Number(a)||0; if (from===to) return a; return from==='USD' ? a*trm : a/trm; };
 const fmtCache = {};
 function money(n, c){
@@ -272,6 +283,22 @@ function totals(m, k){
   }
   return t;
 }
+const NEED_RE = /arriendo|hipoteca|servicio|internet|celular|transporte|salud|seguro|deuda|tarjeta|mercado|imprevist|cr[eé]dito|educaci|colegio|universidad/i;
+const SAVE_RE = /fondo|ahorro|emergencia|inversi|pensi[oó]n/i;
+function bucketOf(it, kind){
+  if (it.bucket && BUCKET[it.bucket]) return it.bucket;
+  if (kind==='invest' || SAVE_RE.test(it.name||'')) return 's';
+  if (kind==='fixed') return 'n';
+  return NEED_RE.test(it.name||'') ? 'n' : 'g';
+}
+function bucketTotals(m, k){
+  const trm=trmOf(k), b=base(), t={n:[0,0], g:[0,0], s:[0,0]};
+  for (const g of GROUPS){ if (g.kind==='income') continue;
+    for (const it of (m.groups[g.kind]||[])){ const bk=bucketOf(it,g.kind);
+      t[bk][0]+=conv(it.planned, itemCur(it), b, trm); t[bk][1]+=conv(actualOf(m,it,trm), itemCur(it), b, trm); } }
+  return t;
+}
+const activeRule = () => { const r=S.settings.rule||defaultRule(); const o=(r.opts||{})[r.active]||RULES[r.active]||RULES.balanced; return {key:r.active, name:(RULES[r.active]||RULES.balanced).name, n:+o.n||0, g:+o.g||0, s:+o.s||0}; };
 const usesUSD = m => itemsOf(m).some(i=>itemCur(i)!==base()) || m.tx.some(t=>t.cur && t.cur!==base());
 
 /* ================= goal math (EA -> monthly compounding) ================= */
@@ -353,7 +380,10 @@ const saveMonth = k => { if (S._draft && S._draft.k!==k) S._draft=null; getMonth
 
 function mergeSettings(d){
   const def=defaultSettings();
-  return {...def, ...d, goal:{...def.goal, ...((d||{}).goal||{})}};
+  d = d || {};
+  const rule = {...def.rule, ...(d.rule||{}), opts:{...def.rule.opts, ...((d.rule||{}).opts||{})}};
+  if (!RULES[rule.active]) rule.active='balanced';
+  return {...def, ...d, goal:{...def.goal, ...(d.goal||{})}, trmHist:{...(d.trmHist||{})}, rule};
 }
 function loadLocal(reason){
   S.mode='local'; DIAG.reason = reason || DIAG.reason;
@@ -361,12 +391,42 @@ function loadLocal(reason){
   try{ const d=JSON.parse(localStorage.getItem(LS)||'null'); if (d){ S.settings=mergeSettings(d.settings); S.months={}; for (const k in (d.months||{})) S.months[k]=normMonth(d.months[k]); } }catch(e){}
   setSave('Guardado en este teléfono'); render();
 }
+async function getJSON(url){
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(), 7000);
+  try { const r=await fetch(url,{signal:ctl.signal, cache:'no-store'}); if (!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const TRM_SOURCES = [
+  async () => { const d=await getJSON('https://www.datos.gov.co/resource/32sa-8pi3.json?$limit=1&$order=vigenciadesde%20DESC');
+    return {v:parseFloat(d[0].valor), date:String(d[0].vigenciadesde||'').slice(0,10), src:'TRM oficial · Superfinanciera'}; },
+  async () => { const d=await getJSON('https://open.er-api.com/v6/latest/USD');
+    return {v:Number(d.rates.COP), date:new Date((d.time_last_update_unix||0)*1000).toISOString().slice(0,10), src:'Tasa de mercado · ExchangeRate-API'}; },
+  async () => { const d=await getJSON('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
+    return {v:Number(d.usd.cop), date:String(d.date||''), src:'Tasa de mercado · currency-api'}; }
+];
+let trmBusy=false;
+async function fetchTRM(force){
+  const st=S.settings; if (st.trmMode!=='auto' || trmBusy) return;
+  const a=st.trmAuto; if (!force && a && a.at && (Date.now()-new Date(a.at).getTime()) < 6*3600e3 && a.at.slice(0,10)===todayDate) return;
+  if (navigator.onLine===false) return;
+  trmBusy=true; if (force) render();
+  let got=null, lastErr='';
+  for (const src of TRM_SOURCES){ try { const r=await src(); if (r && r.v>1000 && r.v<20000){ got=r; break; } } catch(e){ lastErr=errCode(e); } }
+  trmBusy=false;
+  if (got){
+    st.trmAuto={v:Math.round(got.v*100)/100, date:got.date, src:got.src, at:new Date().toISOString()};
+    st.trm=st.trmAuto.v; st.trmHist={...(st.trmHist||{}), [todayKey]:st.trmAuto.v};
+    DIAG.trmErr=''; saveSettings(); if (force) toast('TRM actualizada');
+  } else { DIAG.trmErr = lastErr || 'sin respuesta'; if (force) toast('No pude traer la TRM. Revisa tu internet.'); }
+  render();
+}
 function loadDevice(){
   loadLocal('');
   if (!DIAG.localOk) { DIAG.reason='Este navegador no permite guardar datos (¿modo privado?).'; render(); return; }
   S.mode='device'; setSave('Guardado en el teléfono');
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
   render();
+  fetchTRM(false);
 }
 async function boot(){
   if (!window.claude || !window.claude.use) return loadDevice();
@@ -405,13 +465,20 @@ const IC = {
   hist:'<svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="6" width="18" height="17" rx="3.5"/><path d="M5 11h18M10 4v4M18 4v4"/></svg>',
   cfg:'<svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9h11M21 9h2M5 19h3M13 19h10"/><circle cx="18.5" cy="9" r="2.5"/><circle cx="10.5" cy="19" r="2.5"/></svg>'
 };
-const seg = (scope, field, val, opts=CURS, wide=false) => `<div class="seg${wide?' wide':''}" role="group">${opts.map(o=>`<button type="button" data-act="seg" data-scope="${scope}" data-field="${field}" data-v="${o}" aria-pressed="${o===val}">${o}</button>`).join('')}</div>`;
+const seg = (scope, field, val, opts=CURS, wide=false, labels={}) => `<div class="seg${wide?' wide':''}" role="group">${opts.map(o=>`<button type="button" data-act="seg" data-scope="${scope}" data-field="${field}" data-v="${o}" aria-pressed="${o===val}">${labels[o]||o}</button>`).join('')}</div>`;
 
 /* ================= render ================= */
 const app = document.getElementById('app');
 let pointerDown=false, pendingRender=false;
+function applyTheme(){
+  const t=S.settings.theme, root=document.documentElement;
+  if (t==='light'||t==='dark') root.dataset.theme=t; else delete root.dataset.theme;
+  const dark = t==='dark' || (t!=='light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach(mt => { mt.setAttribute('content', dark ? '#000000' : '#F2F2F7'); mt.removeAttribute('media'); });
+}
 function render(){
   if (S.mode==='loading') return;
+  applyTheme();
   pendingRender=false;
   // keep focus, caret, and whatever is being typed across a re-render
   const a=document.activeElement, fid=a && a.id && a!==document.body ? a.id : null;
@@ -474,7 +541,7 @@ function viewBudget(){
   const spentA=t.fixed[1]+t.variable[1], spentP=t.fixed[0]+t.variable[0];
   const avail=t.income[1]-spentA-t.invest[1];
   let pill, msg;
-  if (t.income[0]<=0){ pill='warn'; msg='Empieza anotando cuánto ganas'; }
+  if (t.income[0]<=0){ pill='warn'; msg='Empieza poniendo cuánto esperas ganar'; }
   else if (Math.abs(left) < (b==='COP'?1:0.01)){ pill='ok'; msg='Cada peso tiene un trabajo'; }
   else if (left>0){ pill='warn'; msg='Asígnalo a un gasto o a tu inversión'; }
   else { pill='bad'; msg='Planeaste más de lo que ganas'; }
@@ -490,17 +557,18 @@ function viewBudget(){
     <div class="big ${left<0?'red':''}">${money(Math.abs(left))}</div>
     <span class="pill ${pill}">${msg}</span>
     <div class="stats">
-      <div class="stat"><div class="l">Ingresos</div><div class="v green">${money(t.income[1])}</div><div class="s">de ${money(t.income[0])}</div></div>
+      <div class="stat"><div class="l">Te llegó</div><div class="v green">${money(t.income[1])}</div><div class="s">de ${money(t.income[0])}</div></div>
       <div class="stat"><div class="l">Gastado</div><div class="v ${spentA>spentP?'red':''}">${money(spentA)}</div><div class="s">de ${money(spentP)}</div></div>
       <div class="stat"><div class="l">Invertido</div><div class="v orange">${money(t.invest[1])}</div><div class="s">de ${money(t.invest[0])}</div></div>
     </div>
   </div>
   <div class="sec" style="margin-top:12px"><div class="list">
     <div class="cell"><div class="main">Disponible hoy<div class="s">Recibido − gastado − invertido</div></div><div class="v ${avail<0?'red':''}" style="font-weight:600">${money(avail)}</div></div>
-    ${showTrm ? `<button class="cell" data-act="trm"><div class="main">TRM del mes<div class="s">Para convertir COP ⇄ USD</div></div><div class="v">${money(trmOf(k),'COP')}</div><span class="arrow">${IC.chev}</span></button>`:''}
+    ${showTrm ? `<button class="cell" data-act="trm"><div class="main">TRM del mes<div class="s">${m.trm ? 'Fijada a mano para este mes' : S.settings.trmMode==='auto' && S.settings.trmAuto ? 'Automática · '+esc(S.settings.trmAuto.src.split(' · ')[0]) : 'Para convertir COP ⇄ USD'}</div></div><div class="v">${money(trmOf(k),'COP')}</div><span class="arrow">${IC.chev}</span></button>`:''}
   </div></div>
   ${fresh ? `<div class="sec" style="margin-top:12px"><div class="note">${m._copiedFrom ? `Copié tu plan de <b>${esc(monthName(m._copiedFrom))}</b>. Ajusta lo que cambie; se guarda en cuanto edites algo.` : 'Toca cada línea para poner cuánto planeas. Todo se guarda solo.'}
     ${allZero ? `<div class="btnrow"><button class="btn tint small" data-act="example">Llenar con un ejemplo</button></div>`:''}</div></div>` : ''}
+  ${ruleCard(m,k,t)}
   ${GROUPS.map(g => groupHtml(m,k,g,t)).join('')}
   <div class="sec"><div class="sech"><span>${esc(gl.name)}</span></div>
     <button class="list cell" data-act="tab" data-v="goal" style="display:block">
@@ -512,13 +580,50 @@ function viewBudget(){
     ${rules ? `<div class="note" style="white-space:pre-wrap;color:var(--label)">${esc(rules)}</div>` : `<button class="note" data-act="tab" data-v="cfg" style="text-align:left;width:100%">Escribe tus reglas de gasto en <b>Ajustes</b> (por ejemplo “Domicilios solo los viernes”) y te las recordaré aquí cada mes.</button>`}
   </div>`;
 }
+function ruleCard(m,k,t){
+  const r=activeRule(), inc=t.income[0]||t.income[1];
+  const head=`<div class="sech"><span>Tu plan de ahorro</span><b>${esc(r.name)} ${r.n}/${r.g}/${r.s}</b></div>`;
+  if (inc<=0) return `<div class="sec">${head}<button class="note" data-act="rule" style="text-align:left;width:100%">Pon en <b>Ingresos</b> cuánto esperas ganar este mes y aquí te digo cuánto puedes gastar en necesidades y gustos, y cuánto ahorrar para tu meta. <span style="color:var(--blue)">Ver planes</span></button></div>`;
+  const bt=bucketTotals(m,k), lim={n:inc*r.n/100, g:inc*r.g/100, s:inc*r.s/100}, b=base(), trm=trmOf(k);
+  const row = key => {
+    const [pl,ac]=bt[key], L=lim[key];
+    if (key==='s'){
+      const pct=L?Math.min(100,ac/L*100):0;
+      return `<div class="cell" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${BUCKET.s}</span><span class="n" style="font-weight:600">mínimo ${money(L)}</span></div>
+        <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:var(--green)"></i></div>
+        <div class="s" style="margin-top:6px">Planeaste ${money(pl)} · aportaste ${money(ac)}${pl<L-0.5?` · <span class="orange">planea ${money(L-pl)} más</span>`:' ✓'}</div></div>`;
+    }
+    const over=pl>L+0.5, pct=L?Math.min(100,ac/L*100):0, color=ac>L?'var(--red)':pct>85?'var(--orange)':'var(--blue)';
+    return `<div class="cell" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${BUCKET[key]}</span><span class="n" style="font-weight:600">hasta ${money(L)}</span></div>
+      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
+      <div class="s" style="margin-top:6px">Planeaste <span class="${over?'red':''}">${money(pl)}</span> · gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:''}</div></div>`;
+  };
+  // tie the plan to the investment goal
+  const gl=goal(), si=idxOf(k), need=pmt(valueBefore(si), gl.target, endIdx()-si), needB=conv(need,gcur(),b,trm);
+  let tie;
+  if (lim.s >= needB-0.5) tie=`<b class="green">Tu plan alcanza para tu meta.</b> Tu meta pide ${money(needB)} al mes y tu plan deja ${money(lim.s)} para ahorrar.${lim.s-needB>0.5?` Los ${money(lim.s-needB)} restantes van a tu fondo de emergencia.`:''}`;
+  else {
+    const n=monthsToReach(valueBefore(si), conv(lim.s,b,gcur(),trm), gl.target);
+    tie=`<b class="orange">Tu plan no alcanza para tu meta a tiempo.</b> Tu meta pide ${money(needB)} al mes (${Math.ceil(needB/inc*100)} % de tus ingresos) y tu plan ahorra ${money(lim.s)}. ${isFinite(n)?`Con ese ahorro llegarías en ${fmtMonths(n).toLowerCase()}.`:''} Sube tu % de ahorro${r.key!=='fast'?', elige el plan Acelerado':''} o amplía el plazo en Inversión.`;
+  }
+  const ef=bt.n[0]||lim.n;
+  return `<div class="sec">${head}<div class="list">
+      ${row('n')}${row('g')}${row('s')}
+      <button class="cell blue" data-act="rule"><div class="main">Cambiar o ajustar mi plan</div><span class="arrow">${IC.chev}</span></button></div>
+    <div class="note" style="margin-top:10px;font-size:14px;color:var(--label)">${tie}<div class="muted" style="margin-top:8px">Fondo de emergencia recomendado: ${money(ef*3)} a ${money(ef*6)} (3 a 6 meses de necesidades). Llénalo antes de invertir más allá de tu meta.</div></div></div>`;
+}
 function groupHtml(m,k,g,t){
   const trm=trmOf(k), items=m.groups[g.kind]||[];
   const rows = items.map(it => {
     const c=itemCur(it), ac=actualOf(m,it,trm), pl=Number(it.planned)||0, rem=pl-ac;
     const pct = pl ? Math.min(100, ac/pl*100) : (ac?100:0);
     let sub, cls='';
-    if (g.kind==='income') sub = rem>0 ? `Falta recibir ${money(rem,c)}` : (ac||pl ? `Recibido ${money(ac,c)}` : 'Toca para planear');
+    if (g.kind==='income'){
+      if (!pl && !ac) sub='Toca para poner cuánto esperas';
+      else if (!ac) sub='Aún no te llega · toca para registrarlo';
+      else if (rem>0) sub=`Te llegó ${money(ac,c)} · faltan ${money(rem,c)}`;
+      else { sub='Te llegó completo ✓'; cls='green'; }
+    }
     else if (g.kind==='invest') sub = rem>0 ? `Falta aportar ${money(rem,c)}` : (pl ? `Aportado ${money(ac,c)} ✓` : (ac?`Aportado ${money(ac,c)}`:'Toca para planear'));
     else if (rem<0){ sub = `Te pasaste ${money(-rem,c)}`; cls='red'; }
     else sub = pl ? `Te quedan ${money(rem,c)}` : (ac?`Gastado ${money(ac,c)}`:'Toca para planear');
@@ -526,11 +631,13 @@ function groupHtml(m,k,g,t){
     return `<button class="cell" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
       <div class="main"><div class="t">${esc(it.name)}${c!==base()?`<span class="badge">${c}</span>`:''}</div>
         <div class="s ${cls}">${sub}</div><div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div></div>
-      <div class="v">${money(pl,c)}<small>${esc(g.act.toLowerCase())} ${money(ac,c)}</small></div><span class="arrow">${IC.chev}</span></button>`;
+      <div class="v">${money(pl,c)}<small>${g.kind==='income'?'esperado':g.kind==='invest'?'planeado':'presupuesto'}</small></div><span class="arrow">${IC.chev}</span></button>`;
   }).join('');
   const [pl,ac]=t[g.kind];
-  return `<div class="sec"><div class="sech"><span>${g.name}</span><b class="n">${money(ac)} de ${money(pl)}</b></div>
-    <div class="list">${rows}<button class="cell blue" data-act="newItem" data-g="${g.kind}">${IC.plus.replace('<svg','<svg style="width:18px;height:18px"')}<span>Añadir línea</span></button></div></div>`;
+  const label = g.kind==='income' ? `te llegó ${money(ac)} de ${money(pl)}` : g.kind==='invest' ? `${money(ac)} de ${money(pl)}` : `gastado ${money(ac)} de ${money(pl)}`;
+  return `<div class="sec"><div class="sech"><span>${g.name}</span><b class="n">${label}</b></div>
+    <div class="list">${rows}<button class="cell blue" data-act="newItem" data-g="${g.kind}">${IC.plus.replace('<svg','<svg style="width:18px;height:18px"')}<span>${g.kind==='income'?'Añadir fuente de ingreso':'Añadir línea'}</span></button></div>
+    ${g.kind==='income'?'<div class="foot">El número de la derecha es lo que <b>esperas</b> ganar en el mes. Cuando te paguen, toca la línea y registra lo que te llegó.</div>':''}</div>`;
 }
 
 /* ---------- movements ---------- */
@@ -663,10 +770,20 @@ function viewHist(){
 function viewCfg(){
   const s=S.settings;
   return `
-  <div class="sec" style="margin-top:8px"><div class="sech"><span>Divisa</span></div><div class="list">
+  <div class="sec" style="margin-top:8px"><div class="sech"><span>Apariencia</span></div><div class="list">
+    <div class="cell"><span>Tema</span><span style="flex:1"></span>${seg('settings','theme',s.theme||'auto',['auto','light','dark'],false,{auto:'Auto',light:'Claro',dark:'Oscuro'})}</div>
+  </div><div class="foot">Auto sigue el modo claro u oscuro de tu iPhone.</div></div>
+  <div class="sec"><div class="sech"><span>Plan de ahorro</span></div><div class="list">
+    <button class="cell" data-act="rule"><div class="main">${esc(activeRule().name)}<div class="s">${activeRule().n} % necesidades · ${activeRule().g} % gustos · ${activeRule().s} % ahorro</div></div><span class="arrow">${IC.chev}</span></button>
+  </div></div>
+  <div class="sec"><div class="sech"><span>Divisa</span></div><div class="list">
     <div class="cell"><span>Moneda principal</span><span style="flex:1"></span>${seg('settings','currency',s.currency)}</div>
-    <div class="cell"><label for="c-trm">TRM por defecto</label><input id="c-trm" inputmode="decimal" value="${plain(s.trm,'COP')}" data-set="trm" autocomplete="off"><span class="muted">COP</span></div>
-  </div><div class="foot">Cada línea del presupuesto puede estar en COP o USD. Los totales se muestran en tu moneda principal usando la TRM de cada mes (puedes fijarla por mes desde Presupuesto). Revisa la TRM del día en el Banco de la República y actualízala aquí.</div></div>
+    <div class="cell"><span>TRM</span><span style="flex:1"></span>${seg('settings','trmMode',s.trmMode||'auto',['auto','manual'],false,{auto:'Automática',manual:'Manual'})}</div>
+    ${s.trmMode==='manual'
+      ? `<div class="cell"><label for="c-trm">1 US$ =</label><input id="c-trm" inputmode="decimal" value="${plain(s.trm,'COP')}" data-set="trm" autocomplete="off"><span class="muted">COP</span></div>`
+      : `<div class="cell"><div class="main">TRM de hoy<div class="s">${trmBusy?'Consultando…':s.trmAuto?esc(s.trmAuto.src)+' · '+esc(s.trmAuto.date):DIAG.trmErr?'No se pudo consultar ('+esc(DIAG.trmErr)+')':'Aún sin consultar'}</div></div><div class="v">${money(s.trm,'COP')}</div></div>
+         <button class="cell blue" data-act="trmRefresh">Actualizar ahora</button>`}
+  </div><div class="foot">${s.trmMode==='manual' ? 'Escribe la TRM que quieres usar. ' : 'La app trae la TRM oficial de la Superfinanciera (datos.gov.co) cada día que la abres con internet. Si esa fuente falla, usa la tasa de mercado. '}Cada línea puede estar en COP o USD y los totales se muestran en tu moneda principal. Cada mes guarda la TRM con la que lo usaste; también puedes fijarla a mano por mes desde Presupuesto.</div></div>
   <div class="sec"><div class="sech"><span>Mis reglas de gasto</span></div><div class="list"><div class="cell">
     <textarea id="c-rules" data-set="rules" placeholder="Ej.&#10;Domicilios solo los viernes&#10;Esperar 48 h antes de comprar algo de más de $200.000&#10;Primero el aporte a la inversión, luego lo demás">${esc(s.rules)}</textarea></div></div>
     <div class="foot">Aparecen al final de Presupuesto cada mes.</div></div>
@@ -690,8 +807,8 @@ function sheetHtml(){
   let title, body, right='Guardar';
   if (sh.type==='tx'){
     const m=getMonth(S.cur,false);
-    title = sh.id ? 'Editar movimiento' : 'Nuevo movimiento';
-    const fi = findItem(m, d.itemId);
+    const fi = findItem(m, d.itemId), isInc = fi && fi.kind==='income';
+    title = isInc ? (sh.id ? 'Editar ingreso' : 'Me llegó plata') : (sh.id ? 'Editar movimiento' : 'Nuevo movimiento');
     body = `
       <div class="amount"><span>${sym(d.cur)}</span><input id="s-amt" inputmode="decimal" placeholder="0" style="width:${amtW(d.amt)}" value="${esc(d.amt)}" data-draft="amt" autocomplete="off" aria-label="Monto"></div>
       <div style="display:flex;justify-content:center;margin-bottom:8px">${seg('draft','cur',d.cur)}</div>
@@ -700,8 +817,8 @@ function sheetHtml(){
         <div class="cell"><label for="s-item">Categoría</label><select id="s-item" data-draft="itemId">${itemOptions(m,d.itemId)}</select></div>
         <div class="cell"><label for="s-date">Fecha</label><input id="s-date" type="date" value="${esc(d.date)}" data-draft="date"></div>
         <div class="cell"><label for="s-note">Nota</label><input id="s-note" placeholder="Opcional" value="${esc(d.note)}" data-draft="note" autocomplete="off"></div>
-      </div>${fi?`<div class="foot">${GNAME[fi.kind]}${fi.kind==='invest'?' · cuenta para tu meta de inversión':''}</div>`:''}</div>
-      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${sh.id?'Guardar cambios':'Anotar'}</button>
+      </div>${fi?`<div class="foot">${isInc?'Ingreso recibido: suma a lo que te ha llegado este mes.':GNAME[fi.kind]}${fi.kind==='invest'?' · cuenta para tu meta de inversión':''}</div>`:''}</div>
+      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${sh.id?'Guardar cambios':isInc?'Registrar ingreso':'Anotar'}</button>
       ${sh.id?`<button class="btn danger" style="margin-top:10px" data-act="txDelete">Eliminar movimiento</button>`:''}</div>`;
   } else if (sh.type==='item'){
     const m=getMonth(S.cur,false), trm=trmOf(S.cur);
@@ -713,20 +830,39 @@ function sheetHtml(){
       <div class="sec" style="margin-top:10px"><div class="sech"><span>${GNAME[sh.g]}</span></div><div class="list">
         <div class="cell"><label for="s-name">Nombre</label><input id="s-name" value="${esc(d.name)}" placeholder="Ej. Gimnasio" data-draft="name" autocomplete="off"></div>
         <div class="cell"><span>Divisa</span><span style="flex:1"></span>${seg('draft','cur',d.cur)}</div>
-        <div class="cell"><label for="s-planned">Planeado al mes</label><input id="s-planned" inputmode="decimal" placeholder="0" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
-      </div></div>
-      ${it ? `<div class="sec"><div class="sech"><span>Movimientos de ${esc(monthOnly(S.cur))}</span><b class="n">${money(actualOf(m,it,trm),itemCur(it))}</b></div><div class="list">
+        <div class="cell"><label for="s-planned">${sh.g==='income'?'Espero recibir':sh.g==='invest'?'Planeo aportar':'Presupuesto'} al mes</label><input id="s-planned" inputmode="decimal" placeholder="0" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
+        ${sh.g!=='income'?`<div class="cell"><span>Tipo</span><span style="flex:1"></span>${seg('draft','bucket',d.bucket,['n','g','s'],false,{n:'Necesidad',g:'Gusto',s:'Ahorro'})}</div>`:''}
+      </div><div class="foot">${sh.g==='income'
+        ? 'Pon cuánto esperas ganar en el mes por esta fuente. Abajo registras lo que de verdad te va llegando.'
+        : d.bucket==='n' ? 'Necesidad: lo que tienes que pagar sí o sí.' : d.bucket==='g' ? 'Gusto: lo que podrías recortar si hace falta.' : 'Ahorro: fondo de emergencia, inversión o ahorro.'}</div></div>
+      ${it && sh.g==='income' && (Number(it.planned)||0)-actualOf(m,it,trm)>0.004 ? `<div class="sec" style="margin-top:16px"><button class="btn" data-act="incomeFull">Ya me llegó completo · ${money((Number(it.planned)||0)-actualOf(m,it,trm),itemCur(it))}</button></div>`:''}
+      ${it ? `<div class="sec"><div class="sech"><span>${sh.g==='income'?'Lo que te ha llegado en':'Movimientos de'} ${esc(monthOnly(S.cur))}</span><b class="n">${money(actualOf(m,it,trm),itemCur(it))}</b></div><div class="list">
         ${txs.map(x=>`<button class="cell" data-act="editTx" data-id="${esc(x.id)}"><div class="main"><div class="t">${esc(x.note||'Sin nota')}</div><div class="s">${esc(dayLabel(x.date||S.cur+'-01'))}</div></div><div class="v">${money(x.amount,x.cur||itemCur(it))}</div><span class="arrow">${IC.chev}</span></button>`).join('')}
-        <button class="cell blue" data-act="itemTx">${IC.plus.replace('<svg','<svg style="width:18px;height:18px"')}<span>Anotar movimiento</span></button></div></div>` : ''}
+        <button class="cell blue" data-act="itemTx">${IC.plus.replace('<svg','<svg style="width:18px;height:18px"')}<span>${sh.g==='income'?'Registrar otro monto recibido':'Anotar movimiento'}</span></button></div></div>` : ''}
       <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${sh.id?'Guardar':'Añadir línea'}</button>
       ${it ? (sh.confirm ? `<div class="note" style="margin-top:10px;color:var(--label)">¿Eliminar “${esc(it.name)}”${txs.length?` y sus ${txs.length} movimiento${txs.length>1?'s':''} de este mes`:''}?
           <div class="btnrow"><button class="btn danger small" data-act="itemDelete">Eliminar</button><button class="btn tint small" data-act="itemDeleteNo">Cancelar</button></div></div>`
         : `<button class="btn danger" style="margin-top:10px" data-act="itemDeleteAsk">Eliminar línea</button>`) : ''}</div>`;
+  } else if (sh.type==='rule'){
+    title='Plan de ahorro';
+    const sum=(parseNum(d.n)||0)+(parseNum(d.g)||0)+(parseNum(d.s)||0);
+    body = `<p class="foot" style="padding:4px 4px 0;font-size:15px">Elige cómo repartir lo que ganas cada mes. Los tres planes se basan en guías conocidas de ahorro e inversión; puedes ajustar los porcentajes.</p>
+      <div class="sec" style="margin-top:14px"><div class="list">${RULE_KEYS.map(k=>{ const o=d.opts[k]; return `<button class="cell" data-act="ruleOpt" data-v="${k}" style="align-items:flex-start">
+        <div class="main"><div class="t" style="font-weight:600">${RULES[k].name} <span class="muted" style="font-weight:400">${o.n}/${o.g}/${o.s}</span></div><div class="s" style="white-space:normal;line-height:1.35">${esc(RULES[k].why)}</div></div>
+        <span style="color:var(--blue);font-size:20px;width:20px;text-align:center">${d.active===k?'✓':''}</span></button>`;}).join('')}</div></div>
+      <div class="sec"><div class="sech"><span>Ajustar ${esc(RULES[d.active].name)}</span><b class="${Math.abs(sum-100)>0.01?'red':''}">Suma ${sum} %</b></div><div class="list">
+        <div class="cell"><label for="r-n">Necesidades</label><input id="r-n" inputmode="decimal" value="${esc(d.n)}" data-draft="n" autocomplete="off"><span class="muted">%</span></div>
+        <div class="cell"><label for="r-g">Gustos</label><input id="r-g" inputmode="decimal" value="${esc(d.g)}" data-draft="g" autocomplete="off"><span class="muted">%</span></div>
+        <div class="cell"><label for="r-s">Ahorro e inversión</label><input id="r-s" inputmode="decimal" value="${esc(d.s)}" data-draft="s" autocomplete="off"><span class="muted">%</span></div>
+        <button class="cell blue" data-act="ruleReset">Volver a los valores recomendados</button>
+      </div>${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
+      <div class="foot"><b>Necesidades:</b> lo que pagas sí o sí (arriendo, servicios, mercado, transporte, cuotas de deudas). <b>Gustos:</b> lo que podrías recortar (restaurantes, salidas, ropa, suscripciones). <b>Ahorro:</b> fondo de emergencia e inversión. Para cambiar el tipo de una línea, tócala en Presupuesto.</div></div>
+      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">Usar este plan</button></div>`;
   } else if (sh.type==='trm'){
     title = 'TRM del mes';
     body = `<div class="sec" style="margin-top:10px"><div class="list">
-      <div class="cell"><label for="s-trm">1 US$ =</label><input id="s-trm" inputmode="decimal" value="${esc(d.trm)}" data-draft="trm" autocomplete="off"><span class="muted">COP</span></div></div>
-      <div class="foot">Se usa para convertir las líneas en USD a COP (y al revés) solo en ${esc(monthName(S.cur))}. Déjala vacía para usar la TRM por defecto de Ajustes.</div></div>
+      <div class="cell"><label for="s-trm">1 US$ =</label><input id="s-trm" inputmode="decimal" value="${esc(d.trm)}" placeholder="${plain(trmOf(S.cur),'COP')}" data-draft="trm" autocomplete="off"><span class="muted">COP</span></div></div>
+      <div class="foot">Se usa para convertir las líneas en USD a COP (y al revés) solo en ${esc(monthName(S.cur))}. Déjala vacía para usar la TRM automática de Ajustes.</div></div>
       <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">Guardar</button></div>`;
   }
   return `<div class="sheetroot${sh.anim?' anim':''}"><div class="backdrop" data-act="sheetClose"></div>
@@ -752,8 +888,8 @@ function openTx(id, itemId){
 }
 function openItem(g, id){
   const m=getMonth(S.cur,false);
-  if (id){ const fi=findItem(m,id); if (!fi) return; S.sheet={type:'item', g:fi.kind, id, anim:true, draft:{name:fi.it.name, planned:plain(fi.it.planned,itemCur(fi.it)), cur:itemCur(fi.it)}}; }
-  else { S.sheet={type:'item', g, anim:true, draft:{name:'', planned:'', cur:base()}}; S._focus='s-name'; }
+  if (id){ const fi=findItem(m,id); if (!fi) return; S.sheet={type:'item', g:fi.kind, id, anim:true, draft:{name:fi.it.name, planned:plain(fi.it.planned,itemCur(fi.it)), cur:itemCur(fi.it), bucket:bucketOf(fi.it,fi.kind)}}; }
+  else { S.sheet={type:'item', g, anim:true, draft:{name:'', planned:'', cur:base(), bucket:g==='invest'?'s':g==='fixed'?'n':'g'}}; S._focus='s-name'; }
 }
 function sheetSave(){
   const sh=S.sheet; if (!sh) return; const d=sh.draft;
@@ -774,9 +910,15 @@ function sheetSave(){
   } else if (sh.type==='item'){
     const name=(d.name||'').trim(); if (!name){ sh.err='Ponle un nombre a la línea'; S._focus='s-name'; return render(); }
     const m=getMonth(S.cur,true);
-    if (sh.id){ const fi=findItem(m,sh.id); if (fi){ fi.it.name=name; fi.it.planned=parseNum(d.planned); fi.it.cur=d.cur; } }
-    else m.groups[sh.g].push({id:uid(), name, planned:parseNum(d.planned), cur:d.cur});
+    const bk = sh.g==='income' ? undefined : d.bucket;
+    if (sh.id){ const fi=findItem(m,sh.id); if (fi){ fi.it.name=name; fi.it.planned=parseNum(d.planned); fi.it.cur=d.cur; if (bk) fi.it.bucket=bk; } }
+    else { const it={id:uid(), name, planned:parseNum(d.planned), cur:d.cur}; if (bk) it.bucket=bk; m.groups[sh.g].push(it); }
     saveMonth(S.cur); S.sheet=null; toast(sh.id?'Línea guardada':'Línea añadida');
+  } else if (sh.type==='rule'){
+    const n=parseNum(d.n), g=parseNum(d.g), sv=parseNum(d.s);
+    if (n<0||g<0||sv<0 || Math.abs(n+g+sv-100)>0.01){ sh.err='Los tres porcentajes deben sumar 100 %'; return render(); }
+    d.opts[d.active]={n,g,s:sv};
+    S.settings.rule={active:d.active, opts:d.opts}; saveSettings(); S.sheet=null; toast(`Plan ${RULES[d.active].name} activado`);
   } else if (sh.type==='trm'){
     const m=getMonth(S.cur,true), v=parseNum(d.trm);
     if (v>0) m.trm=v; else delete m.trm;
@@ -826,8 +968,17 @@ document.addEventListener('click', e => {
     case 'item': openItem(b.dataset.g, b.dataset.id); break;
     case 'newItem': openItem(b.dataset.g, null); break;
     case 'itemTx': { const id=S.sheet&&S.sheet.id; S.sheet=null; openTx(null,id); break; }
-    case 'trm': { const m=S.months[S.cur]; S.sheet={type:'trm', anim:true, draft:{trm: m&&m.trm ? plain(m.trm,'COP') : plain(trmOf(S.cur),'COP')}}; S._focus='s-trm'; break; }
+    case 'trm': { const m=S.months[S.cur]; S.sheet={type:'trm', anim:true, draft:{trm: m&&m.trm ? plain(m.trm,'COP') : ''}}; S._focus='s-trm'; break; }
     case 'sheetClose': S.sheet=null; break;
+    case 'rule': { const r=S.settings.rule||defaultRule(), opts=JSON.parse(JSON.stringify(r.opts)), o=opts[r.active];
+      S.sheet={type:'rule', anim:!S.sheet, draft:{active:r.active, opts, n:String(o.n), g:String(o.g), s:String(o.s)}}; break; }
+    case 'ruleOpt': { const d=S.sheet.draft; d.opts[d.active]={n:parseNum(d.n),g:parseNum(d.g),s:parseNum(d.s)}; d.active=b.dataset.v; const o=d.opts[d.active]; d.n=String(o.n); d.g=String(o.g); d.s=String(o.s); S.sheet.err=null; break; }
+    case 'ruleReset': { const d=S.sheet.draft, R=RULES[d.active]; d.n=String(R.n); d.g=String(R.g); d.s=String(R.s); S.sheet.err=null; break; }
+    case 'trmRefresh': fetchTRM(true); return;
+    case 'incomeFull': { const sh=S.sheet, m=getMonth(S.cur,true), fi=findItem(m,sh.id); if (!fi) break;
+      const rest=(Number(fi.it.planned)||0)-actualOf(m,fi.it,trmOf(S.cur));
+      if (rest>0){ m.tx.push({id:uid(), itemId:fi.it.id, amount:Math.round(rest*100)/100, cur:itemCur(fi.it), date:defDate(), note:'Pago completo'}); saveMonth(S.cur); toast('Ingreso registrado'); }
+      S.sheet=null; break; }
     case 'reload': location.reload(); return;
     case 'export': exportBackup(); return;
     case 'importYes': { const d=S.importPending; S.importPending=null; S.settings=mergeSettings(d.settings); S.months={}; for (const k in (d.months||{})) S.months[k]=normMonth(d.months[k]); S._draft=null;
@@ -842,7 +993,7 @@ document.addEventListener('click', e => {
     case 'seg': {
       const {scope, field, v} = b.dataset;
       if (scope==='draft' && S.sheet){ S.sheet.draft[field]=v; S.sheet.curTouched=true; }
-      else if (scope==='settings'){ S.settings[field]=v; saveSettings(); }
+      else if (scope==='settings'){ S.settings[field]=v; saveSettings(); if (field==='trmMode' && v==='auto') { render(); fetchTRM(true); return; } }
       else if (scope==='goal' && field==='cur' && v!==gcur()){
         const g=S.settings.goal, from=gcur(), trm=Number(S.settings.trm)||4000;
         g.target=Math.round(conv(g.target,from,v,trm)*100)/100; g.initial=Math.round(conv(g.initial,from,v,trm)*100)/100; g.cur=v;
@@ -869,6 +1020,7 @@ document.addEventListener('change', e => {
     if (!S.sheet.curTouched){ const fi=findItem(getMonth(S.cur,false),el.value); if (fi) S.sheet.draft.cur=itemCur(fi.it); }
     return scheduleRender();
   }
+  if (el.dataset.draft && S.sheet && S.sheet.type==='rule') return scheduleRender();
   if (el.dataset.draft) return;
   if (el.dataset.g){
     const k=el.dataset.g, g=S.settings.goal;
@@ -896,7 +1048,8 @@ document.addEventListener('keydown', e => {
     else e.target.blur();
   }
 });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState==='hidden') flushAll(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState==='hidden') flushAll(); else if (S.mode!=='loading') fetchTRM(false); });
+if (window.matchMedia) try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch(e){}
 window.addEventListener('pagehide', flushAll);
 
 boot();
