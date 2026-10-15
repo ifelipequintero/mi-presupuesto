@@ -260,6 +260,14 @@ button.stat:active{background:var(--fill)}
 .colb .amt{font-size:12.5px;font-weight:700;white-space:nowrap}
 .colb .of{font-size:10.5px;color:var(--label2);white-space:nowrap;margin-top:-5px}
 .chipgrid.hscroll.one{grid-template-rows:auto}
+
+.why{margin-top:12px;border-top:.5px solid var(--sep);padding-top:10px;font-size:14px;color:var(--label2)}
+.why summary{color:var(--blue);font-weight:600;cursor:pointer;list-style:none}
+.why summary::-webkit-details-marker{display:none}
+.why p{margin:8px 0;line-height:1.4}
+.kvs{display:flex;flex-direction:column;gap:6px;background:var(--bg);border-radius:12px;padding:10px 12px}
+.kvs div{display:flex;justify-content:space-between;gap:10px}
+.kvs b{color:var(--label);font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
 </style>
 </head>
 <body>
@@ -816,14 +824,13 @@ function groupHtml(m,k,g,t){
     const c=itemCur(it), ac=actualOf(m,it,trm), pl=Number(it.planned)||0, rem=pl-ac;
     const pct = pl ? Math.min(100, ac/pl*100) : (ac?100:0), col=colorOf(it,g.kind);
     let sub, cls='';
-    if (g.kind==='income'){
-      if (!pl && !ac) sub='Toca para poner cuánto esperas';
-      else if (!ac) sub='Aún no te llega';
-      else if (rem>0) sub=`Faltan ${money(rem,c)}`;
-      else { sub='Te llegó completo ✓'; cls='green'; }
-    } else if (g.kind==='invest'){
-      const a=acctById(itemAcct(it));
-      sub = `${a?esc(a.name)+' · ':''}${rem>0 ? `faltan ${money(rem,c)}` : pl ? 'cumplido ✓' : 'toca para planear'}`; if (pl && rem<=0) cls='green';
+    if (g.kind==='income' || g.kind==='invest'){
+      const last=lastMonthSpent(k,it), a=g.kind==='invest' ? acctById(itemAcct(it)) : null, pre = a ? esc(a.name)+' · ' : '';
+      if (pl && ac>=pl){ sub = pre + (g.kind==='income' ? 'Te llegó todo lo esperado ✓' : 'Cumpliste el aporte ✓'); cls='green'; }
+      else if (pl && ac) sub = pre + `faltan ${money(rem,c)}`;
+      else if (ac) sub = pre + (g.kind==='income' ? 'Registrado este mes' : 'Aportado este mes');
+      else if (last>0) sub = pre + `El mes pasado: ${money(last,c)} · toca para registrarlo`;
+      else sub = pre + (g.kind==='income' ? 'Toca para registrar lo que te llegó' : 'Toca para registrar un aporte');
     } else {
       const n=m.tx.filter(x=>x.itemId===it.id).length, last=lastMonthSpent(k,it);
       if (pl && rem<0){ sub=`Te pasaste ${money(-rem,c)} del límite`; cls='red'; }
@@ -843,12 +850,12 @@ function groupHtml(m,k,g,t){
   }).join('');
   let ghost='';
   if (g.kind==='invest') ghost = accounts().filter(a => !items.some(it=>itemAcct(it)===a.id)).map(a =>
-    `<button class="cell blue" data-act="addAcctLine" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<span>Planear aporte a ${esc(a.name)}</span></button>`).join('');
+    `<button class="cell" data-act="acctTx2" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<div class="main"><div class="t">Aporte a ${esc(a.name)}</div><div class="s">Toca para registrar un aporte</div></div></button>`).join('');
   const [pl,ac]=t[g.kind];
   const label = (g.kind==='fixed'||g.kind==='variable') ? (pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac)) : `${money(ac)} / ${money(pl)}`;
   return `<div class="sec"><div class="sech"><span>${GROUP_EMOJI[g.kind]} ${g.name}</span><b class="n">${label}</b></div>
-    <div class="list">${rows}${ghost}<button class="cell blue" data-act="newItem" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Añadir fuente de ingreso':g.kind==='invest'?'Añadir línea de aporte':'Añadir gasto'}</span></button></div>
-    ${g.kind==='income' ? '<div class="foot">El “de” es lo que <b>esperas</b> ganar en el mes. Cuando te paguen, toca la línea y registra lo que te llegó.</div>' : ''}</div>`;
+    <div class="list">${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>
+</div>`;
 }
 function goalMini(){
   const g=goalStats();
@@ -883,13 +890,21 @@ function ruleCard(m,k,t){
       <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
       <div class="s" style="margin-top:6px">Gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:` · te pasaste ${money(ac-L)}`}</div></div>`;
   };
-  // tie the plan to the investment goal
-  const gl=goal(), si=idxOf(k), need=pmtAll(balancesBefore(si), gl.target, endIdx()-si), needB=conv(need,gcur(),b,trm);
+  // tie the plan to the investment goal, looking at what you really aporta
+  const G=goalStats(), needB=conv(G.need,gcur(),b,trm), pctNeed=Math.min(100,Math.ceil(needB/inc*100));
+  const realB = G.paceP>0 ? conv(G.paceP,gcur(),b,trm) : null;
+  const reaches = G.paceP>0 && isFinite(G.pace) && G.si+G.pace<=G.ei;
+  const fix = pctNeed>r.s && pctNeed<=100 ? `<div class="btnrow"><button class="btn tint small" data-act="ruleSetS" data-v="${pctNeed}">Subir mi ahorro a ${pctNeed} %</button></div>` : '';
   let tie;
-  if (lim.s >= needB-0.5) tie=`<b class="green">Tu plan alcanza para tu meta.</b> Tu meta pide ${money(needB)} al mes y tu plan deja ${money(lim.s)} para ahorrar.${lim.s-needB>0.5?` Los ${money(lim.s-needB)} restantes van a tu fondo de emergencia.`:''}`;
+  if (lim.s >= needB-0.5)
+    tie=`<b class="green">Tu plan alcanza para tu meta.</b> Tu meta pide ${money(needB)} al mes y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}.${lim.s-needB>0.5?` Lo que sobra (${money(lim.s-needB)}) puede ir a tu fondo de emergencia.`:''}`;
+  else if (reaches)
+    tie=`<b class="green">Vas bien con tu meta.</b> Tu plan de ahorro (${r.s} %) deja ${money(lim.s)}, menos de los ${money(needB)} que pide tu meta. Pero como hoy aportas ${money(realB)} al mes, sí llegas a tiempo. Para que tu plan cuadre con lo que de verdad haces, sube el ahorro a ${pctNeed} %.${fix}`;
+  else if (realB!=null)
+    tie=`<b class="orange">Así no llegas a tiempo a tu meta.</b> Tu meta pide ${money(needB)} al mes (${pctNeed} % de lo que ganas). Hoy aportas ${money(realB)} y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}. Sube tu ahorro o amplía el plazo en Inversión.${fix}`;
   else {
-    const n=reachAll(balancesBefore(si), conv(lim.s,b,gcur(),trm), gl.target);
-    tie=`<b class="orange">Tu plan no alcanza para tu meta a tiempo.</b> Tu meta pide ${money(needB)} al mes (${Math.ceil(needB/inc*100)} % de tus ingresos) y tu plan ahorra ${money(lim.s)}. ${isFinite(n)?`Con ese ahorro llegarías en ${fmtMonths(n).toLowerCase()}.`:''} Sube tu % de ahorro${r.key!=='fast'?', elige el plan Acelerado':''} o amplía el plazo en Inversión.`;
+    const n=reachAll(balancesBefore(G.si), conv(lim.s,b,gcur(),trm), goal().target);
+    tie=`<b class="orange">Tu plan no alcanza para tu meta a tiempo.</b> Tu meta pide ${money(needB)} al mes (${pctNeed} % de lo que ganas) y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}. ${isFinite(n)?`Ahorrando eso llegarías en ${fmtMonths(n).toLowerCase()}.`:''} Sube tu ahorro o amplía el plazo en Inversión.${fix}`;
   }
   const ef=bt.n[0]||lim.n;
   return `<div class="sec">${head}<div class="list">
@@ -1042,6 +1057,18 @@ function viewGoal(){
     <span class="pill ${status[0]}" style="margin:0">${status[1]}</span>
     <div style="margin-top:10px;line-height:1.45">${futureTxt}</div>
     ${pastTxt ? `<div class="s" style="margin-top:8px">${pastTxt}</div>` : ''}
+    <details class="why"><summary>¿De dónde sale el plan original?</summary>
+      <p>Es el aporte mensual fijo que, desde el mes en que empezaste, te llevaría justo a tu meta en tu fecha. No lo escribes tú: sale de estos datos.</p>
+      <div class="kvs">
+        <div><span>Meta</span><b>${money(gl.target,gc)}</b></div>
+        <div><span>Empezaste en</span><b>${esc(cap(monthName(keyOf(g.s0))))}</b></div>
+        <div><span>Plazo</span><b>${gl.years} años (${esc(endName)})</b></div>
+        ${g.accts.map(x=>`<div><span>Tenías en ${esc(x.a.name)}</span><b>${money(Number(x.a.initial)||0,x.cur)}</b></div>`).join('')}
+        <div><span>Rentabilidad promedio</span><b>${pctTxt(blendedEA())} % EA</b></div>
+        <div><span>Aporte mensual del plan</span><b>${money(g.planP,gc)}</b></div>
+      </div>
+      <p>Si ya tenías plata invertida al empezar y aquí sale $0, tócala en “Tus cuentas” y llena “Tenía en…”. Si “Empezaste en” es anterior a tus primeros aportes registrados, cámbialo en “Tu meta”.</p>
+    </details>
   </div><div class="foot">Se recalcula sola cada vez que abres la app, con tus aportes registrados, los saldos reales que pongas y la tasa de cada cuenta. El veredicto depende de tu aporte de ahora; el plan original (${money(g.planP,gc)} al mes desde ${esc(monthName(keyOf(g.s0)))}) es solo referencia.</div>` : noGoal}</div>
 
   ${hasGoal ? `<div class="sec"><div class="sech"><span>Este mes</span></div><div class="list">
@@ -1160,6 +1187,18 @@ function viewMore(){
 const fmtTyping = raw => { if (!raw) return '0'; const [i,d]=String(raw).split(','); const n=i ? Number(i).toLocaleString('es-CO') : '0'; return d!==undefined ? `${n},${d}` : n; };
 const rawOf = n => { const v=Math.round((Number(n)||0)*100)/100; return v ? String(v).replace('.',',') : ''; };
 const yesterday = (() => { const d=new Date(now); d.setDate(d.getDate()-1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; })();
+function itemWords(g, existing){
+  if (g==='income') return {title:'Nueva fuente de ingreso', namePh:'Ej. Salario, Freelance', noun:'fuente de ingreso', ask: existing ? 'Registrar lo que te llegó' : '¿Cuánto te llegó?', btn:'Registrar ingreso', done:'Ingreso registrado 💰',
+    plan:'Espero recibir al mes', planPh:'Opcional', same:'Me llegó lo mismo que el mes pasado', list:'Te llegó en', other:'Registrar un monto de otro día',
+    foot:'Lo que escribas se registra como plata que te llegó hoy.', planFoot:'Si pones cuánto esperas, te muestro cuánto te falta por recibir.'};
+  if (g==='invest') return {title:'Nueva línea de aporte', namePh:'Ej. Aporte a Bolsa', noun:'línea de aporte', ask: existing ? 'Registrar un aporte' : '¿Cuánto invertiste?', btn:'Registrar aporte', done:'Aporte registrado 📈',
+    plan:'Planeo aportar al mes', planPh:'Opcional', same:'Aporté lo mismo que el mes pasado', list:'Aportado en', other:'Registrar un aporte de otro día',
+    foot:'Lo que escribas se registra como aporte de hoy y suma a la cuenta y a tu meta.', planFoot:'Si pones cuánto planeas aportar, te muestro cuánto te falta este mes.'};
+  return {title:'Nuevo gasto', namePh:'Ej. Gimnasio', noun:'gasto', ask: existing ? 'Anotar un gasto' : '¿Cuánto gastaste?', btn:'Guardar gasto', done:'Gasto anotado ✓',
+    plan:'Límite al mes', planPh:'Sin límite', same:'Pagué lo mismo que el mes pasado', list:'Gastado en', other:'Anotar un gasto de otro día',
+    foot:'Lo que escribas se anota como gasto de hoy.', planFoot:'Si le pones un límite, te aviso cuánto te queda y cuándo te pasas.'};
+}
+const itemBtnLabel = (sh, v) => parseNum(v)>0 ? itemWords(sh.g, !!sh.id).btn : (sh.id ? 'Guardar' : 'Añadir');
 function emojiGrid(cur){ return `<div class="emojigrid">${EMOJI_PICK.map(e=>`<button type="button" data-act="pickEmoji" data-v="${e}" aria-pressed="${e===cur}" aria-label="${e}">${e}</button>`).join('')}</div>`; }
 function sheetHtml(){
   const sh=S.sheet, d=sh.draft;
@@ -1194,37 +1233,37 @@ function sheetHtml(){
   } else if (sh.type==='item'){
     const m=getMonth(S.cur,false), trm=trmOf(S.cur);
     const it = sh.id ? (findItem(m,sh.id)||{}).it : null;
-    title = sh.id ? (it ? it.name : 'Editar') : sh.g==='income' ? 'Nueva fuente de ingreso' : sh.g==='invest' ? 'Nueva línea de aporte' : 'Nuevo gasto';
+    const W = itemWords(sh.g, !!it), isExp = sh.g==='fixed' || sh.g==='variable';
+    title = it ? it.name : W.title;
     const txs = it ? m.tx.filter(x=>x.itemId===it.id).sort((a,b)=>(b.date||'').localeCompare(a.date||'')) : [];
     const col = it ? colorOf(it,sh.g) : COLORS[hashStr(d.name||'x')%COLORS.length];
-    const ac = accounts(), isExp = sh.g==='fixed' || sh.g==='variable', last = it && isExp ? lastMonthSpent(S.cur,it) : 0;
+    const ac = accounts(), last = it ? lastMonthSpent(S.cur,it) : 0;
+    const rest = it ? (Number(it.planned)||0)-actualOf(m,it,trm) : 0;
+    const nameCell = `<div class="cell"><label for="s-name">Nombre</label><input id="s-name" value="${esc(d.name)}" placeholder="${W.namePh}" data-draft="name" autocomplete="off"></div>`;
     body = `
       ${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
       <div class="sheethero"><button type="button" class="avbtn" data-act="togglePick" aria-label="Cambiar ícono">${avatar(d.emoji || emojiOf({name:d.name, acct:d.acct}, sh.g), col, 'lg')}<span>Cambiar ícono</span></button></div>
       ${sh.pick ? emojiGrid(d.emoji) : ''}
-      <div class="sec" style="margin-top:12px"><div class="sech"><span>${GROUP_EMOJI[sh.g]} ${GNAME[sh.g]}</span></div><div class="list">
-        <div class="cell"><label for="s-name">Nombre</label><input id="s-name" value="${esc(d.name)}" placeholder="Ej. Gimnasio" data-draft="name" autocomplete="off"></div>
+      <div class="sec" style="margin-top:12px"><div class="list">
+        ${it ? '' : nameCell}
+        <div class="cell"><label for="s-spend" style="font-weight:600">${W.ask}</label><input id="s-spend" inputmode="decimal" placeholder="0" value="${esc(d.spend)}" data-draft="spend" autocomplete="off"><span class="muted">${d.cur}</span></div>
+      </div><div class="foot">${W.foot}</div></div>
+      ${it && last>0 && !txs.length ? `<div class="sec" style="margin-top:14px"><button class="btn tint" data-act="paySame">${W.same} · ${money(last,itemCur(it))}</button></div>` : ''}
+      ${it && sh.g==='income' && rest>0.004 ? `<div class="sec" style="margin-top:14px"><button class="btn tint" data-act="incomeFull">Ya me llegó todo lo esperado · ${money(rest,itemCur(it))}</button></div>` : ''}
+      ${it ? `<div class="sec"><div class="sech"><span>${W.list} ${esc(monthOnly(S.cur))}</span><b class="n">${money(actualOf(m,it,trm),itemCur(it))}</b></div><div class="list">
+        ${txs.map(x=>`<button class="cell" data-act="editTx" data-id="${esc(x.id)}"><div class="main"><div class="t">${esc(x.note||cap(dayLabel(x.date||S.cur+'-01')))}</div><div class="s">${x.note?esc(cap(dayLabel(x.date||S.cur+'-01'))):''}</div></div><div class="v">${money(x.amount,x.cur||itemCur(it))}</div><span class="arrow">${IC.chev}</span></button>`).join('')}
+        <button class="cell blue" data-act="itemTx">${plusIc}<span>${W.other}</span></button></div></div>` : ''}
+      <div class="sec"><div class="sech"><span>${it ? 'Ajustes' : 'Opcional'}</span></div><div class="list">
+        ${it ? nameCell : ''}
         <div class="cell"><span>Divisa</span><span style="flex:1"></span>${seg('draft','cur',d.cur)}</div>
-        ${isExp ? `<div class="cell"><label for="s-spend">${it ? 'Anotar un gasto' : '¿Cuánto gastaste?'}</label><input id="s-spend" inputmode="decimal" placeholder="0" value="${esc(d.spend)}" data-draft="spend" autocomplete="off"><span class="muted">${d.cur}</span></div>`
-          : `<div class="cell"><label for="s-planned">${sh.g==='income'?'Espero recibir':'Planeo aportar'} al mes</label><input id="s-planned" inputmode="decimal" placeholder="0" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>`}
         ${sh.g==='invest' && ac.length>1 ? `<div class="cell"><span>Cuenta</span><span style="flex:1"></span>${seg('draft','acct',d.acct,ac.map(a=>a.id),false,Object.fromEntries(ac.map(a=>[a.id,esc(a.name)])))}</div>` : ''}
-      </div><div class="foot">${sh.g==='income'
-        ? 'Pon cuánto esperas ganar en el mes por esta fuente. Abajo registras lo que de verdad te va llegando.'
-        : sh.g==='invest' ? 'Lo que aportes aquí suma a la cuenta elegida y a tu meta de inversión.'
-        : 'El monto se anota como gasto de hoy. Si fue otro día, usa el botón + de abajo.'}</div></div>
-      ${isExp && last>0 && !txs.length ? `<div class="sec" style="margin-top:14px"><button class="btn tint" data-act="paySame">Pagué lo mismo que el mes pasado · ${money(last,itemCur(it))}</button></div>` : ''}
-      ${it && sh.g==='income' && (Number(it.planned)||0)-actualOf(m,it,trm)>0.004 ? `<div class="sec" style="margin-top:16px"><button class="btn" data-act="incomeFull">Ya me llegó completo · ${money((Number(it.planned)||0)-actualOf(m,it,trm),itemCur(it))}</button></div>`:''}
-      ${it ? `<div class="sec"><div class="sech"><span>${sh.g==='income'?'Lo que te ha llegado en':isExp?'Gastado en':'Movimientos de'} ${esc(monthOnly(S.cur))}</span><b class="n">${money(actualOf(m,it,trm),itemCur(it))}</b></div><div class="list">
-        ${txs.map(x=>`<button class="cell" data-act="editTx" data-id="${esc(x.id)}"><div class="main"><div class="t">${esc(x.note||'Sin nota')}</div><div class="s">${esc(cap(dayLabel(x.date||S.cur+'-01')))}</div></div><div class="v">${money(x.amount,x.cur||itemCur(it))}</div><span class="arrow">${IC.chev}</span></button>`).join('')}
-        <button class="cell blue" data-act="itemTx">${plusIc}<span>${sh.g==='income'?'Registrar otro monto recibido':isExp?'Anotar un gasto de otro día':'Anotar movimiento'}</span></button></div></div>` : ''}
-      ${isExp ? `<div class="sec"><div class="sech"><span>Opcional</span></div><div class="list">
-        <div class="cell"><label for="s-planned">Límite al mes</label><input id="s-planned" inputmode="decimal" placeholder="Sin límite" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
-        <div class="cell"><span>Tipo</span><span style="flex:1"></span>${seg('draft','bucket',d.bucket,['n','g','s'],false,{n:'Necesidad',g:'Gusto',s:'Ahorro'})}</div>
-      </div><div class="foot">Si le pones un límite, te aviso cuánto te queda y cuándo te pasas. ${d.bucket==='n' ? 'Necesidad: lo que tienes que pagar sí o sí.' : d.bucket==='g' ? 'Gusto: lo que podrías recortar si hace falta.' : 'Ahorro: fondo de emergencia u otro ahorro.'}</div></div>` : ''}
-      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${isExp && parseNum(d.spend)>0 ? 'Guardar gasto' : sh.id ? 'Guardar' : 'Añadir'}</button>
+        <div class="cell"><label for="s-planned">${W.plan}</label><input id="s-planned" inputmode="decimal" placeholder="${W.planPh}" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
+        ${isExp ? `<div class="cell"><span>Tipo</span><span style="flex:1"></span>${seg('draft','bucket',d.bucket,['n','g','s'],false,{n:'Necesidad',g:'Gusto',s:'Ahorro'})}</div>` : ''}
+      </div><div class="foot">${W.planFoot}${isExp ? ' '+(d.bucket==='n' ? 'Necesidad: lo que tienes que pagar sí o sí.' : d.bucket==='g' ? 'Gusto: lo que podrías recortar si hace falta.' : 'Ahorro: fondo de emergencia u otro ahorro.') : ''}</div></div>
+      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${itemBtnLabel(sh, d.spend)}</button>
       ${it ? (sh.confirm ? `<div class="card" style="margin-top:10px">¿Eliminar “${esc(it.name)}”${txs.length?` y sus ${txs.length} movimiento${txs.length>1?'s':''} de este mes`:''}?
           <div class="btnrow"><button class="btn danger small" data-act="itemDelete">Eliminar</button><button class="btn tint small" data-act="itemDeleteNo">Cancelar</button></div></div>`
-        : `<button class="btn danger" style="margin-top:10px" data-act="itemDeleteAsk">Eliminar categoría</button>`) : ''}</div>`;
+        : `<button class="btn danger" style="margin-top:10px" data-act="itemDeleteAsk">Eliminar ${W.noun}</button>`) : ''}</div>`;
   } else if (sh.type==='acct'){
     const a = sh.id ? acctById(sh.id) : null, gc=gcur();
     const col = a ? acctColor(a) : ACOLORS[accounts().length%ACOLORS.length];
@@ -1234,7 +1273,10 @@ function sheetHtml(){
       ${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
       <div class="sheethero"><button type="button" class="avbtn" data-act="togglePick" aria-label="Cambiar ícono">${avatar(d.emoji, col, 'lg')}<span>Cambiar ícono</span></button></div>
       ${sh.pick ? emojiGrid(d.emoji) : ''}
-      <div class="sec" style="margin-top:12px"><div class="list">
+      ${a ? `<div class="sec" style="margin-top:12px"><div class="list">
+        <div class="cell"><label for="a-add" style="font-weight:600">¿Cuánto invertiste hoy?</label><input id="a-add" inputmode="decimal" placeholder="0" value="${esc(d.add)}" data-draft="add" autocomplete="off"><span class="muted">${d.cur}</span></div>
+      </div><div class="foot">Se registra como aporte de hoy a ${esc(a.name)} y suma a tu meta. Si fue otro día, usa “Registrar un aporte de otro día”.</div></div>
+      <div class="sec"><div class="sech"><span>Ajustes de la cuenta</span></div>` : '<div class="sec" style="margin-top:12px">'}<div class="list">
         <div class="cell"><label for="a-name">Nombre</label><input id="a-name" value="${esc(d.name)}" placeholder="Ej. Bolsa, Nu, CDT" data-draft="name" autocomplete="off"></div>
         <div class="cell"><span>Divisa</span><span style="flex:1"></span>${seg('draft','cur',d.cur)}</div>
         <div class="cell"><label for="a-rate">Rentabilidad</label><input id="a-rate" inputmode="decimal" value="${esc(d.rate)}" placeholder="0" data-draft="rate" autocomplete="off"><span class="muted">%</span></div>
@@ -1244,8 +1286,8 @@ function sheetHtml(){
         <div class="cell"><label for="a-init">Tenía en ${esc(monthShort(goal().start||todayKey))}</label><input id="a-init" inputmode="decimal" value="${esc(d.initial)}" placeholder="0" data-draft="initial" autocomplete="off"><span class="muted">${d.cur}</span></div>
         <div class="cell"><label for="a-real">Saldo real hoy</label><input id="a-real" inputmode="decimal" value="${esc(d.real)}" placeholder="${a?plain(Math.round((goalStats().accts.find(x=>x.a.id===a.id)||{}).nowN||0),d.cur)||'0':'0'}" data-draft="real" autocomplete="off"><span class="muted">${d.cur}</span></div>
       </div><div class="foot">“Tenía en…” es lo que había en esta cuenta el mes en que empezaste tu meta. “Saldo real hoy” es lo que te muestra la app de esta cuenta ahora; si lo pones, uso ese número en vez del estimado.</div></div>
-      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${a?'Guardar':'Añadir cuenta'}</button>
-      ${a ? `<button class="btn tint" style="margin-top:10px" data-act="acctTx">Registrar un aporte a ${esc(a.name)}</button>` : ''}
+      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave" id="acctSave">${a ? (parseNum(d.add)>0 ? 'Registrar aporte' : 'Guardar') : 'Añadir cuenta'}</button>
+      ${a ? `<button class="btn tint" style="margin-top:10px" data-act="acctTx">Registrar un aporte de otro día</button>` : ''}
       ${a && accounts().length>1 ? (sh.confirm ? `<div class="card" style="margin-top:10px">¿Eliminar la cuenta “${esc(a.name)}”? Sus aportes registrados pasan a ${esc(accounts().find(x=>x.id!==a.id).name)}.
           <div class="btnrow"><button class="btn danger small" data-act="acctDelete">Eliminar</button><button class="btn tint small" data-act="itemDeleteNo">Cancelar</button></div></div>`
         : `<button class="btn danger" style="margin-top:10px" data-act="itemDeleteAsk">Eliminar cuenta</button>`) : ''}</div>`;
@@ -1307,7 +1349,7 @@ function openTx(id, preset={}){
 function openItem(g, id){
   const m=getMonth(S.cur,false), wasOpen=!!S.sheet;
   if (id){ const fi=findItem(m,id); if (!fi) return;
-    S.sheet={type:'item', g:fi.kind, id, anim:!wasOpen, draft:{name:fi.it.name, planned:plain(fi.it.planned,itemCur(fi.it)), cur:itemCur(fi.it), bucket:bucketOf(fi.it,fi.kind), emoji:fi.it.emoji||null, acct:fi.kind==='invest'?itemAcct(fi.it):null, spend:''}}; if (fi.kind==='fixed'||fi.kind==='variable') S._focus='s-spend'; }
+    S.sheet={type:'item', g:fi.kind, id, anim:!wasOpen, draft:{name:fi.it.name, planned:plain(fi.it.planned,itemCur(fi.it)), cur:itemCur(fi.it), bucket:bucketOf(fi.it,fi.kind), emoji:fi.it.emoji||null, acct:fi.kind==='invest'?itemAcct(fi.it):null, spend:''}}; S._focus='s-spend'; }
   else { S.sheet={type:'item', g, anim:!wasOpen, draft:{name:'', planned:'', cur:g==='invest'?gcur():base(), bucket:g==='invest'?'s':g==='fixed'?'n':'g', emoji:null, acct:g==='invest'?(accounts()[0]||{}).id:null}}; S._focus='s-name'; }
 }
 function openAcct(id){
@@ -1315,9 +1357,9 @@ function openAcct(id){
   const ac = a ? acctCur(a) : gc;
   const real = a && m && m.balances && m.balances[a.id]!=null && m.balances[a.id]!=='' ? plain(m.balances[a.id],ac) : '';
   S.sheet={type:'acct', id:a?a.id:null, anim:!S.sheet, draft: a
-    ? {name:a.name, emoji:a.emoji||'💰', rate:String(a.rate??'').replace('.',','), rateType:a.rateType||'EA', initial:plain(a.initial,ac), real, cur:ac}
+    ? {name:a.name, emoji:a.emoji||'💰', rate:String(a.rate??'').replace('.',','), rateType:a.rateType||'EA', initial:plain(a.initial,ac), real, cur:ac, add:''}
     : {name:'', emoji:'🏦', rate:'', rateType:'EA', initial:'', real:'', cur:gc}};
-  if (!a) S._focus='a-name';
+  S._focus = a ? 'a-add' : 'a-name';
 }
 function sheetSave(){
   const sh=S.sheet; if (!sh) return; const d=sh.draft;
@@ -1351,8 +1393,8 @@ function sheetSave(){
     if (sh.id){ const fi=findItem(m,sh.id); if (fi) apply(fi.it); }
     else { const it={id:uid()}; apply(it); m.groups[sh.g].push(it); sh.newId=it.id; }
     const spend=parseNum(d.spend), itemId=sh.id||sh.newId;
-    if ((sh.g==='fixed'||sh.g==='variable') && spend>0){ m.tx.push({id:uid(), itemId, amount:spend, cur:d.cur, date:defDate(), note:''}); S.lastItem=itemId; }
-    saveMonth(S.cur); S.sheet=null; toast(spend>0 && (sh.g==='fixed'||sh.g==='variable') ? `Gasto anotado en ${name} ✓` : sh.id ? 'Guardado' : 'Añadido');
+    if (spend>0){ m.tx.push({id:uid(), itemId, amount:spend, cur:d.cur, date:defDate(), note:''}); if (sh.g!=='invest') S.lastItem=itemId; }
+    saveMonth(S.cur); S.sheet=null; toast(spend>0 ? itemWords(sh.g,true).done : sh.id ? 'Guardado' : 'Añadido');
   } else if (sh.type==='acct'){
     const name=(d.name||'').trim(); if (!name){ sh.err='Ponle un nombre a la cuenta'; S._focus='a-name'; return render(); }
     const g=goal(); let a=sh.id ? acctById(sh.id) : null;
@@ -1365,7 +1407,9 @@ function sheetSave(){
     m.balances=m.balances||{};
     if (realStr==='') delete m.balances[a.id]; else m.balances[a.id]=parseNum(realStr);
     if (!Object.keys(m.balances).length) delete m.balances;
-    saveMonth(S.cur); S.sheet=null; toast(sh.id?'Cuenta guardada':'Cuenta añadida');
+    const add=parseNum(d.add);
+    if (sh.id && add>0){ const it=ensureAcctItem(m,a.id); m.tx.push({id:uid(), itemId:it.id, amount:add, cur:a.cur||gcur(), date:defDate(), note:''}); }
+    saveMonth(S.cur); S.sheet=null; toast(sh.id && add>0 ? 'Aporte registrado 📈' : sh.id?'Cuenta guardada':'Cuenta añadida');
   } else if (sh.type==='rule'){
     const n=parseNum(d.n), g=parseNum(d.g), sv=parseNum(d.s);
     if (n<0||g<0||sv<0 || Math.abs(n+g+sv-100)>0.01){ sh.err='Los tres porcentajes deben sumar 100 %'; return render(); }
@@ -1443,6 +1487,9 @@ document.addEventListener('click', e => {
     case 'addAcctLine': { const m=getMonth(S.cur,true), it=ensureAcctItem(m,b.dataset.v); saveMonth(S.cur); openItem('invest', it.id); break; }
     case 'acct': openAcct(b.dataset.id); break;
     case 'newAcct': S.sheet=null; openAcct(null); break;
+    case 'ruleSetS': { const r=S.settings.rule, o=r.opts[r.active], ns=Number(b.dataset.v); let extra=ns-o.s;
+      const fromG=Math.min(o.g,extra); o.g-=fromG; extra-=fromG; o.n=Math.max(0,o.n-extra); o.s=ns; saveSettings(); toast(`Ahorro subido a ${ns} %`); break; }
+    case 'acctTx2': openTx(null,{kind:'inv', acct:b.dataset.v}); break;
     case 'acctTx': { const id=S.sheet.id; S.sheet=null; openTx(null,{kind:'inv', acct:id}); break; }
     case 'acctDelete': {
       const id=S.sheet.id, g=goal(); g.accounts=g.accounts.filter(x=>x.id!==id); const to=g.accounts[0].id;
@@ -1461,7 +1508,7 @@ document.addEventListener('click', e => {
     case 'key': keyPress(b.dataset.v); return;
     case 'togglePick': S.sheet.pick=!S.sheet.pick; break;
     case 'paySame': { const sh=S.sheet, m=getMonth(S.cur,true), fi=findItem(m,sh.id); if (!fi) break; const amt=lastMonthSpent(S.cur,fi.it);
-      if (amt>0){ m.tx.push({id:uid(), itemId:fi.it.id, amount:Math.round(amt*100)/100, cur:itemCur(fi.it), date:defDate(), note:'Igual que el mes pasado'}); saveMonth(S.cur); toast(`Gasto anotado en ${fi.it.name} ✓`); }
+      if (amt>0){ m.tx.push({id:uid(), itemId:fi.it.id, amount:Math.round(amt*100)/100, cur:itemCur(fi.it), date:defDate(), note:'Igual que el mes pasado'}); saveMonth(S.cur); toast(itemWords(fi.kind,true).done); }
       S.sheet=null; break; }
     case 'pickEmoji': S.sheet.draft.emoji=b.dataset.v; S.sheet.pick=false; break;
     case 'trm': { const m=S.months[S.cur]; S.sheet={type:'trm', anim:true, draft:{trm: m&&m.trm ? plain(m.trm,'COP') : ''}}; S._focus='s-trm'; break; }
@@ -1507,7 +1554,8 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const el=e.target;
-  if (el.id==='s-spend'){ const bt=document.querySelector('.sheet .btn[data-act="sheetSave"]'); if (bt && S.sheet && S.sheet.type==='item') bt.textContent = parseNum(el.value)>0 ? 'Guardar gasto' : (S.sheet.id ? 'Guardar' : 'Añadir'); }
+  if (el.id==='a-add'){ const bt=document.getElementById('acctSave'); if (bt) bt.textContent = parseNum(el.value)>0 ? 'Registrar aporte' : 'Guardar'; }
+  if (el.id==='s-spend'){ const bt=document.querySelector('.sheet .btn[data-act="sheetSave"]'); if (bt && S.sheet && S.sheet.type==='item') bt.textContent = itemBtnLabel(S.sheet, el.value); }
   if (el.dataset.draft && S.sheet){ S.sheet.draft[el.dataset.draft]=el.value; if (S.sheet.err){ S.sheet.err=null; const er=document.querySelector('.sheet .err'); if (er) er.remove(); } }
   if (el.id==='g-years'){ const yl=document.getElementById('g-yl'); if (yl) yl.textContent=el.value; }
 });
