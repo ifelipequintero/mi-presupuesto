@@ -757,45 +757,7 @@ function render(){
 function scheduleRender(){ if (pointerDown) pendingRender=true; else setTimeout(render,0); }
 let toastTimer;
 function toast(t, act){ S.toast={t, act}; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ S.toast=null; const el=document.querySelector('.toast'); if (el) el.remove(); }, act ? 5000 : 2200); }
-/* swipe a line to the left to reveal “Eliminar”, like iOS:
-   only a deliberate leftward drag on a still page opens it; any scroll cancels it */
-let sw=null, swipeJustEnded=false, lastScroll=0;
-window.addEventListener('scroll', () => { lastScroll=Date.now(); if (sw && !sw.active) sw=null; document.querySelectorAll('.swipe.open').forEach(w=>w.classList.remove('open')); }, {passive:true});
-function swStart(target, x, y){
-  swipeJustEnded=false;
-  const c=target.closest && target.closest('.swipe .sw-content');
-  const del=target.closest && target.closest('.sw-del'), mine=(c||del) && (c||del).parentElement;
-  document.querySelectorAll('.swipe.open').forEach(w => { if (w!==mine) w.classList.remove('open'); });
-  sw=null;
-  if (!c || Date.now()-lastScroll < 450) return;           // still scrolling: ignore
-  sw={el:c, wrap:c.parentElement, x, y, sy:window.scrollY, base:c.parentElement.classList.contains('open')?-96:0, dx:0, active:false};
-}
-function swMove(x, y, ev){
-  if (!sw) return;
-  if (window.scrollY!==sw.sy){ sw=null; return; }          // the page moved: it is a scroll
-  const dx=x-sw.x, dy=y-sw.y;
-  if (!sw.active){
-    if (Math.abs(dy)>6){ sw=null; return; }
-    const sideways = Math.abs(dx)>22 && Math.abs(dx)>Math.abs(dy)*3;
-    if (sideways && (sw.base!==0 || dx<0)){ sw.active=true; sw.x=x; sw.wrap.classList.add('dragging'); }
-    return;
-  }
-  if (ev && ev.cancelable) ev.preventDefault();
-  sw.dx=x-sw.x; sw.el.style.transform=`translateX(${Math.min(0,Math.max(-130, sw.base+sw.dx))}px)`;
-}
-function swEnd(){
-  if (!sw) return;
-  if (sw.active){ const open = sw.base===0 ? sw.dx < -70 : sw.dx < 40; sw.wrap.classList.remove('dragging'); sw.el.style.transform=''; sw.wrap.classList.toggle('open', open); swipeJustEnded=true; }
-  sw=null;
-}
-document.addEventListener('touchstart', e => { const t=e.touches[0]; if (e.touches.length===1) swStart(e.target, t.clientX, t.clientY); else sw=null; }, {passive:true});
-document.addEventListener('touchmove', e => { const t=e.touches[0]; if (t) swMove(t.clientX, t.clientY, e); }, {passive:false});
-document.addEventListener('touchend', swEnd);
-document.addEventListener('touchcancel', () => { if (sw && sw.active){ sw.wrap.classList.remove('dragging'); sw.el.style.transform=''; } sw=null; });
-/* mouse (computer) */
-document.addEventListener('pointerdown', e => { if (e.pointerType==='mouse') swStart(e.target, e.clientX, e.clientY); });
-document.addEventListener('pointermove', e => { if (e.pointerType==='mouse') swMove(e.clientX, e.clientY, null); });
-document.addEventListener('pointerup', e => { if (e.pointerType==='mouse') swEnd(); });
+
 
 function problemBanner(){
   if (S.mode==='local') return `<div class="sec" style="margin-top:8px"><div class="note" style="color:var(--label);border:1.5px solid var(--red)">
@@ -911,13 +873,13 @@ function groupHtml(m,k,g,t){
       else sub='Toca para anotar un gasto';
     }
     const barCol = (g.kind==='fixed'||g.kind==='variable') && rem<0 ? 'var(--red)' : col;
-    return `<div class="swipe"><button class="sw-del" data-act="swDel" data-g="${g.kind}" data-id="${esc(it.id)}" tabindex="-1">Eliminar</button><button class="cell sw-content" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
+    return `<button class="cell" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
       ${avatar(emojiOf(it,g.kind), col)}
       <div class="main">
         <div class="row1"><span class="t">${esc(it.name)}${c!==base()?`<span class="badge">${c}</span>`:''}</span><span class="v">${money(ac,c)}</span></div>
         ${pl>0 ? `<div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${barCol}"></i></div>` : ''}
         <div class="row1 s"><span class="${cls}">${sub}</span><span>${pl>0 ? `de ${money(pl,c)}` : ''}</span></div>
-      </div></button></div>`;
+      </div></button>`;
   }).join('');
   let ghost='';
   if (g.kind==='invest') ghost = accounts().filter(a => !items.some(it=>itemAcct(it)===a.id)).map(a =>
@@ -927,9 +889,8 @@ function groupHtml(m,k,g,t){
   const goalRow = g.kind==='invest' && accounts().length ? `<button class="cell" data-act="tab" data-v="goal">${avatar('🎯','#FF9F0A')}<div class="main"><div class="row1"><span class="t">Tu meta pide este mes</span><span class="v">${money(pl)}</span></div>
       ${pl>0?`<div class="pbar"><i style="width:${Math.min(100,ac/pl*100).toFixed(1)}%;background:var(--orange)"></i></div>`:''}
       <div class="row1 s"><span class="${ac>=pl?'green':''}">${ac>=pl ? 'Cumpliste el aporte del mes ✓' : `Te faltan ${money(pl-ac)}`}</span><span>se calcula con tu meta</span></div></div></button>` : '';
-  const hint = g.kind==='variable' && items.length ? '<div class="foot">Desliza una línea a la izquierda para eliminar lo que no uses.</div>' : '';
   return `<div class="sec"><div class="sech"><span>${GROUP_EMOJI[g.kind]} ${g.name}</span><b class="n">${label}</b></div>
-    <div class="list">${goalRow}${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>${hint}
+    <div class="list">${goalRow}${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>
 </div>`;
 }
 function goalMini(){
@@ -1563,9 +1524,6 @@ document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 
 document.addEventListener('click', e => {
-  if (swipeJustEnded){ swipeJustEnded=false; return; }
-  const openRow = e.target.closest('.swipe.open');
-  if (openRow && !e.target.closest('.sw-del')){ openRow.classList.remove('open'); return; }
   const b=e.target.closest('[data-act]');
   if (!b || b.tagName==='INPUT' || b.tagName==='SELECT' || b.tagName==='TEXTAREA') return;
   const a=b.dataset.act;
@@ -1587,11 +1545,6 @@ document.addEventListener('click', e => {
     case 'addAcctLine': { const m=getMonth(S.cur,true), it=ensureAcctItem(m,b.dataset.v); saveMonth(S.cur); openItem('invest', it.id); break; }
     case 'acct': openAcct(b.dataset.id); break;
     case 'newAcct': S.sheet=null; openAcct(null); break;
-    case 'swDel': { const m=getMonth(S.cur,true), g=b.dataset.g, id=b.dataset.id, list=m.groups[g]||[], idx=list.findIndex(i=>i.id===id); if (idx<0) break;
-      const txs=m.tx.filter(t=>t.itemId===id);
-      if (txs.length && b.dataset.sure!=='1'){ b.dataset.sure='1'; b.textContent=`¿Borrar ${txs.length} mov.?`; return; }
-      const item=list[idx]; list.splice(idx,1); m.tx=m.tx.filter(t=>t.itemId!==id); saveMonth(S.cur);
-      S._undo={k:S.cur, g, idx, item, txs}; toast(`${item.name} eliminado`, 'undoDel'); break; }
     case 'undoDel': { const u=S._undo; if (!u) break; const m=getMonth(u.k,true); m.groups[u.g].splice(Math.min(u.idx,m.groups[u.g].length),0,u.item); m.tx.push(...u.txs); saveMonth(u.k); S._undo=null; toast('Restaurado'); break; }
     case 'planInfo': S.sheet={type:'plan', anim:true, draft:{}}; break;
     case 'ruleUndo': { const r=S.settings.rule; if (r.undo){ r.active = RULES[r.undo.key] ? r.undo.key : 'balanced'; delete r.undo; saveSettings(); toast(`Volviste a ${RULES[r.active].name}`); } break; }
@@ -1646,7 +1599,9 @@ document.addEventListener('click', e => {
     case 'txDelete': { const m=getMonth(S.cur,true); m.tx=m.tx.filter(t=>t.id!==S.sheet.id); saveMonth(S.cur); S.sheet=null; toast('Movimiento eliminado'); break; }
     case 'itemDeleteAsk': S.sheet.confirm=true; break;
     case 'itemDeleteNo': S.sheet.confirm=false; break;
-    case 'itemDelete': { const m=getMonth(S.cur,true), sh=S.sheet; m.groups[sh.g]=m.groups[sh.g].filter(i=>i.id!==sh.id); m.tx=m.tx.filter(t=>t.itemId!==sh.id); saveMonth(S.cur); S.sheet=null; toast('Categoría eliminada'); break; }
+    case 'itemDelete': { const m=getMonth(S.cur,true), sh=S.sheet, list=m.groups[sh.g], idx=list.findIndex(i=>i.id===sh.id); if (idx<0) break;
+      const item=list[idx], txs=m.tx.filter(t=>t.itemId===sh.id); list.splice(idx,1); m.tx=m.tx.filter(t=>t.itemId!==sh.id); saveMonth(S.cur);
+      S._undo={k:S.cur, g:sh.g, idx, item, txs}; S.sheet=null; toast(`${item.name} eliminado`, 'undoDel'); break; }
     case 'example': { const m=getMonth(S.cur,true); for (const g of GROUPS) for (const it of m.groups[g.kind]) if (EXAMPLE[it.name]!=null && itemCur(it)==='COP') it.planned=EXAMPLE[it.name]; saveMonth(S.cur); toast('Ejemplo cargado: cámbialo por tus números'); break; }
     case 'seg': {
       const {scope, field, v} = b.dataset;
