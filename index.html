@@ -313,8 +313,8 @@ const RULE_KEYS = ['min','balanced','fast'];
 const BUCKET = {n:'Necesidades', g:'Gustos', s:'Ahorro e inversión'};
 const defaultRule = () => ({active:'balanced', opts:Object.fromEntries(RULE_KEYS.map(k=>[k,{n:RULES[k].n, g:RULES[k].g, s:RULES[k].s}]))});
 const defaultAccounts = (rate=10, initial=0) => [
-  {id:'bolsa', name:'Bolsa', emoji:'📈', rate, rateType:'EA', initial, cur:'COP', inGoal:true},
-  {id:'nu', name:'Nu', emoji:'💜', rate:0, rateType:'EA', initial:0, cur:'COP', inGoal:false}
+  {id:'bolsa', name:'Bolsa', emoji:'📈', rate, rateType:'EA', initial, cur:'COP'},
+  {id:'nu', name:'Nu', emoji:'💜', rate:0, rateType:'EA', initial:0, cur:'COP'}
 ];
 const defaultSettings = () => ({
   currency:'COP', trm:4000, rules:'', theme:'auto', trmMode:'auto', trmAuto:null, trmHist:{}, rule:defaultRule(),
@@ -418,7 +418,7 @@ const usesUSD = m => itemsOf(m).some(i=>itemCur(i)!==base()) || m.tx.some(t=>t.c
 const goal = () => S.settings.goal;
 const ACOLORS = ['#0A84FF','#BF5AF2','#30D158','#FF9F0A','#FF375F','#64D2FF','#5E5CE6'];
 const accounts = () => goal().accounts || [];
-const goalAccounts = () => accounts().filter(a => a.inGoal!==false);
+const goalAccounts = () => accounts();
 const acctById = id => accounts().find(a=>a.id===id);
 const acctColor = a => a.color || ACOLORS[Math.max(0,accounts().indexOf(a))%ACOLORS.length];
 const acctCur = a => (a && a.cur) || gcur();
@@ -522,7 +522,7 @@ function mergeSettings(d){
   const dg = d.goal || {};
   const g = {...def.goal, ...dg};
   if (!Array.isArray(dg.accounts) || !dg.accounts.length) g.accounts = defaultAccounts(dg.rate!=null ? Number(dg.rate)||0 : 10, Number(dg.initial)||0);
-  else g.accounts = dg.accounts.map(a => ({rateType:'EA', emoji:'💰', rate:0, initial:0, cur:g.cur||'COP', inGoal:a.id!=='nu', ...a}));
+  else g.accounts = dg.accounts.map(a => ({rateType:'EA', emoji:'💰', rate:0, initial:0, cur:g.cur||'COP', ...a}));
   delete g.rate; delete g.initial;
   return {...def, ...d, goal:g, trmHist:{...(d.trmHist||{})}, rule};
 }
@@ -732,40 +732,36 @@ function problemBanner(){
 function viewHome(){
   const k=S.cur, m=getMonth(k,false), t=totals(m,k), b=base(), trm=trmOf(k);
   const spentP=t.fixed[0]+t.variable[0], spentA=t.fixed[1]+t.variable[1];
-  const left=t.income[0]-(spentP+t.invest[0]), rest=spentP-spentA;
-  const avail=t.income[1]-spentA-t.invest[1];
+  const avail=t.income[1]-spentA-t.invest[1], pending=Math.max(0,t.income[0]-t.income[1]);
+  // limits are optional: compare only the categories that have one
+  let limP=0, limA=0;
+  for (const g of ['fixed','variable']) for (const it of (m.groups[g]||[])) if (Number(it.planned)>0){ limP+=conv(it.planned,itemCur(it),b,trm); limA+=conv(actualOf(m,it,trm),itemCur(it),b,trm); }
+  const rest=limP-limA;
   const ci=idxOf(k), ti=idxOf(todayKey), dim=new Date(+k.slice(0,4), +k.slice(5,7), 0).getDate();
   const daysLeft = ci===ti ? dim-now.getDate()+1 : ci>ti ? dim : 0;
-  const perDay = daysLeft>0 && rest>0 ? rest/daysLeft : 0;
-  const fresh=!S.months[k], allZero=itemsOf(m).every(i=>!i.planned);
-  const spend=[];
+  const spend=[]; let nTx=0;
   for (const g of ['fixed','variable']) for (const it of (m.groups[g]||[])){ const ac=conv(actualOf(m,it,trm),itemCur(it),b,trm); if (ac>0) spend.push({it, kind:g, ac}); }
+  for (const x of m.tx){ const fi=findItem(m,x.itemId); if (fi && (fi.kind==='fixed'||fi.kind==='variable')) nTx++; }
   spend.sort((x,y)=>y.ac-x.ac);
-  const segBase=Math.max(spentP,spentA)||1;
-  const tol = b==='COP' ? 1 : 0.01;
-  let assign='';
-  if (t.income[0]>0){
-    if (left>=tol) assign=`<div class="banner warn">💡 Te faltan <b class="n">${money(left)}</b> por repartir. Asígnalos a un gasto, a tu ahorro o a tu inversión para que cada peso tenga un trabajo.</div>`;
-    else if (left<=-tol) assign=`<div class="banner bad">⚠️ Planeaste <b class="n">${money(-left)}</b> más de lo que esperas ganar. Baja algún presupuesto.</div>`;
-    else assign=`<div class="banner ok">✅ Cada peso tiene un trabajo este mes.</div>`;
-  }
+  // the bar is your income: each color is a category, orange is what you invested, grey is what is left
+  const segBase=Math.max(t.income[1], spentA+t.invest[1])||1;
+  const perDay = daysLeft>0 && avail>0 ? avail/daysLeft : 0;
+  const fresh=!S.months[k] && m._copiedFrom;
   const showTrm = usesUSD(m) || b==='USD';
   return `
   <section class="hero">
-    <div class="eyebrow">${spentP>0 ? (rest>=0 ? 'Te quedan para gastar' : 'Te pasaste del presupuesto') : 'Este mes'}</div>
-    <div class="big fit ${rest<0?'red':''}">${moneyBig(Math.abs(spentP>0?rest:0))}</div>
-    <div class="s">${spentP>0 ? `de ${money(spentP)} para gastos${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Pon cuánto planeas gastar en cada categoría y aquí verás cuánto te queda.'}</div>
-    ${spentP>0 ? `<div class="segbar" aria-hidden="true">${spend.map(o=>`<i style="width:${Math.min(100,o.ac/segBase*100).toFixed(2)}%;background:${colorOf(o.it,o.kind)}"></i>`).join('')}</div>` : ''}
+    <div class="eyebrow">${avail>=0 ? 'Te queda este mes' : 'Gastaste más de lo que te llegó'}</div>
+    <div class="big fit ${avail<0?'red':''}">${moneyBig(Math.abs(avail))}</div>
+    <div class="s">${t.income[1]>0 ? `De ${money(t.income[1])} que te llegaron${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}${pending>0?`<br>Aún esperas ${money(pending)} más.`:''}</div>
+    ${t.income[1]>0 || spentA>0 ? `<div class="segbar" aria-hidden="true">${spend.map(o=>`<i style="width:${(o.ac/segBase*100).toFixed(2)}%;background:${colorOf(o.it,o.kind)}"></i>`).join('')}${t.invest[1]>0?`<i style="width:${(t.invest[1]/segBase*100).toFixed(2)}%;background:var(--orange)"></i>`:''}</div>` : ''}
     <div class="stats">
-      <button class="stat" data-act="seeTx" data-v="ingreso"><div class="l">💰 Te llegó</div><div class="v fit green">${money(t.income[1])}</div><div class="s">de ${moneyShort(t.income[0])}</div></button>
-      <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastado</div><div class="v fit ${spentA>spentP&&spentP>0?'red':''}">${money(spentA)}</div><div class="s">de ${moneyShort(spentP)}</div></button>
-      <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertido</div><div class="v fit orange">${money(t.invest[1])}</div><div class="s">de ${moneyShort(t.invest[0])}</div></button>
+      <button class="stat" data-act="seeTx" data-v="ingreso"><div class="l">💰 Te llegó</div><div class="v fit green">${money(t.income[1])}</div><div class="s">${t.income[0]>0?`de ${moneyShort(t.income[0])}`:'&nbsp;'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastaste</div><div class="v fit">${money(spentA)}</div><div class="s">${nTx} gasto${nTx===1?'':'s'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertiste</div><div class="v fit orange">${money(t.invest[1])}</div><div class="s">${t.invest[0]>0?`de ${moneyShort(t.invest[0])}`:'&nbsp;'}</div></button>
     </div>
-    <div class="avail"><span>Disponible hoy en tu bolsillo</span><b class="n ${avail<0?'red':''}">${money(avail)}</b></div>
+    ${limP>0 ? `<div class="avail"><span>${rest>=0?'En las categorías con límite te quedan':'Te pasaste de tus límites por'}</span><b class="n ${rest<0?'red':''}">${money(Math.abs(rest))}</b></div>` : ''}
   </section>
-  ${assign}
-  ${fresh ? `<div class="banner">${m._copiedFrom ? `📋 Copié tu plan de <b>${esc(monthName(m._copiedFrom))}</b>. Ajusta lo que cambie; se guarda en cuanto edites algo.` : '👋 Toca cada categoría para poner cuánto planeas. Todo se guarda solo.'}
-    ${allZero ? `<div class="btnrow"><button class="btn tint small" data-act="example">Llenar con un ejemplo</button></div>` : ''}</div>` : ''}
+  ${fresh ? `<div class="banner">📋 Nuevo mes. Tus categorías y límites vienen de <b>${esc(monthName(m._copiedFrom))}</b>; los gastos empiezan en cero.</div>` : ''}
   ${budgetColumns(m,k)}
   ${ruleCard(m,k,t)}
   ${GROUPS.map(g => groupHtml(m,k,g,t)).join('')}
@@ -773,25 +769,31 @@ function viewHome(){
   ${goalMini()}
   ${reminderCard()}`;
 }
+/* what you spent on this category last month (to repeat a fixed payment with one tap) */
+function lastMonthSpent(k, it){
+  const pm=S.months[keyOf(idxOf(k)-1)]; if (!pm) return 0;
+  const fi=findItem(pm, it.id); return fi ? actualOf(pm, fi.it, trmOf(keyOf(idxOf(k)-1))) : 0;
+}
 function budgetColumns(m,k){
   const trm=trmOf(k), b=base(), cols=[];
   for (const g of ['fixed','variable']) for (const it of (m.groups[g]||[])){
     const pl=conv(it.planned,itemCur(it),b,trm), ac=conv(actualOf(m,it,trm),itemCur(it),b,trm);
     if (pl>0 || ac>0) cols.push({it, kind:g, pl, ac});
   }
-  const head=`<div class="sech"><span>Presupuesto vs. gastado</span>${cols.length?'<b>Toca una categoría</b>':''}</div>`;
-  if (!cols.length) return `<div class="sec">${head}<div class="card empty">📊 Pon presupuesto a tus categorías y aquí verás cuánto llevas en cada una.</div></div>`;
+  const anyLimit = cols.some(c=>c.pl>0);
+  const head=`<div class="sech"><span>${anyLimit?'Gastos vs. límite':'¿En qué gastaste?'}</span>${cols.length?'<b>Toca una categoría</b>':''}</div>`;
+  if (!cols.length) return `<div class="sec">${head}<div class="card empty">📊 Cuando anotes gastos verás aquí en qué se te va la plata.</div></div>`;
   cols.sort((x,y)=>Math.max(y.pl,y.ac)-Math.max(x.pl,x.ac));
   const max=Math.max(...cols.map(c=>Math.max(c.pl,c.ac)))||1, H=130;
   return `<div class="sec">${head}<div class="card" style="padding:14px 8px 12px"><div class="cols hscroll" id="hs-cols">${cols.map(c=>{
     const col=colorOf(c.it,c.kind), over=c.pl>0 && c.ac>c.pl+0.5;
     const hp=c.pl/max*H, ha=c.ac>0 ? Math.max(10, Math.min(c.ac,max)/max*H) : 0;
     return `<button class="colb" data-act="filterCat" data-v="${esc(c.it.id)}" aria-label="${esc(c.it.name)}: ${money(c.ac)} de ${money(c.pl)}">
-      <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '—'}</span>
+      <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '&nbsp;'}</span>
       <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':`color-mix(in srgb, ${col} 75%, var(--card))`}"></span></span>
       ${avatar(emojiOf(c.it,c.kind), col, 'sm')}
-      <span class="amt">${esc(moneyShort(c.ac))}</span><span class="of">de ${esc(moneyShort(c.pl))}</span></button>`; }).join('')}</div>
-    <div class="legend" style="padding:10px 6px 0"><span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Presupuesto</span><span><i style="height:9px;width:12px;border-radius:3px;background:var(--blue)"></i>Gastado</span><span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span></div></div></div>`;
+      <span class="amt">${esc(moneyShort(c.ac))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(c.pl))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
+    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--blue)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
 }
 function donutCard(spend, total){
   const head=`<div class="sech"><span>¿En qué se te va la plata?</span></div>`;
@@ -822,24 +824,30 @@ function groupHtml(m,k,g,t){
     } else if (g.kind==='invest'){
       const a=acctById(itemAcct(it));
       sub = `${a?esc(a.name)+' · ':''}${rem>0 ? `faltan ${money(rem,c)}` : pl ? 'cumplido ✓' : 'toca para planear'}`; if (pl && rem<=0) cls='green';
-    } else if (rem<0){ sub=`Te pasaste ${money(-rem,c)}`; cls='red'; }
-    else sub = pl ? `Quedan ${money(rem,c)}` : (ac ? 'Sin presupuesto' : 'Toca para planear');
+    } else {
+      const n=m.tx.filter(x=>x.itemId===it.id).length, last=lastMonthSpent(k,it);
+      if (pl && rem<0){ sub=`Te pasaste ${money(-rem,c)} del límite`; cls='red'; }
+      else if (pl) sub=`Te quedan ${money(rem,c)} del límite`;
+      else if (n) sub=`${n} gasto${n>1?'s':''} este mes`;
+      else if (last>0) sub=`El mes pasado: ${money(last,c)} · toca para pagarlo`;
+      else sub='Toca para anotar un gasto';
+    }
     const barCol = (g.kind==='fixed'||g.kind==='variable') && rem<0 ? 'var(--red)' : col;
     return `<button class="cell" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
       ${avatar(emojiOf(it,g.kind), col)}
       <div class="main">
         <div class="row1"><span class="t">${esc(it.name)}${c!==base()?`<span class="badge">${c}</span>`:''}</span><span class="v">${money(ac,c)}</span></div>
-        <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${barCol}"></i></div>
-        <div class="row1 s"><span class="${cls}">${sub}</span><span>de ${money(pl,c)}</span></div>
+        ${pl>0 ? `<div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${barCol}"></i></div>` : ''}
+        <div class="row1 s"><span class="${cls}">${sub}</span><span>${pl>0 ? `de ${money(pl,c)}` : ''}</span></div>
       </div></button>`;
   }).join('');
   let ghost='';
   if (g.kind==='invest') ghost = accounts().filter(a => !items.some(it=>itemAcct(it)===a.id)).map(a =>
     `<button class="cell blue" data-act="addAcctLine" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<span>Planear aporte a ${esc(a.name)}</span></button>`).join('');
   const [pl,ac]=t[g.kind];
-  const label = `${money(ac)} / ${money(pl)}`;
+  const label = (g.kind==='fixed'||g.kind==='variable') ? (pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac)) : `${money(ac)} / ${money(pl)}`;
   return `<div class="sec"><div class="sech"><span>${GROUP_EMOJI[g.kind]} ${g.name}</span><b class="n">${label}</b></div>
-    <div class="list">${rows}${ghost}<button class="cell blue" data-act="newItem" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Añadir fuente de ingreso':'Añadir categoría'}</span></button></div>
+    <div class="list">${rows}${ghost}<button class="cell blue" data-act="newItem" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Añadir fuente de ingreso':g.kind==='invest'?'Añadir línea de aporte':'Añadir gasto'}</span></button></div>
     ${g.kind==='income' ? '<div class="foot">El “de” es lo que <b>esperas</b> ganar en el mes. Cuando te paguen, toca la línea y registra lo que te llegó.</div>' : ''}</div>`;
 }
 function goalMini(){
@@ -868,12 +876,12 @@ function ruleCard(m,k,t){
       const pct=L?Math.min(100,ac/L*100):0;
       return `<div class="cell" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${BUCKET.s}</span><span class="n" style="font-weight:600">mínimo ${money(L)}</span></div>
         <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:var(--green)"></i></div>
-        <div class="s" style="margin-top:6px">Planeaste ${money(pl)} · aportaste ${money(ac)}${pl<L-0.5?` · <span class="orange">planea ${money(L-pl)} más</span>`:' ✓'}</div></div>`;
+        <div class="s" style="margin-top:6px">Llevas ${money(ac)}${ac<L-0.5?` · <span class="orange">te faltan ${money(L-ac)}</span>`:' ✓'}</div></div>`;
     }
     const over=pl>L+0.5, pct=L?Math.min(100,ac/L*100):0, color=ac>L?'var(--red)':pct>85?'var(--orange)':'var(--blue)';
     return `<div class="cell" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${BUCKET[key]}</span><span class="n" style="font-weight:600">hasta ${money(L)}</span></div>
       <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
-      <div class="s" style="margin-top:6px">Planeaste <span class="${over?'red':''}">${money(pl)}</span> · gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:''}</div></div>`;
+      <div class="s" style="margin-top:6px">Gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:` · te pasaste ${money(ac-L)}`}</div></div>`;
   };
   // tie the plan to the investment goal
   const gl=goal(), si=idxOf(k), need=pmtAll(balancesBefore(si), gl.target, endIdx()-si), needB=conv(need,gcur(),b,trm);
@@ -960,9 +968,9 @@ function goalStats(){
     const cur=acctCur(a), nowN=nativeNow(a); let pocket=Number(a.initial)||0;
     for (let i=s0;i<=si;i++) pocket += contribNative(keyOf(i),a);
     return {a, cur, nowN, now:toGoalCur(a,nowN,kNow), pocket, gain:nowN-pocket, known:(Number(a.initial)||0)>0 || !hasReal(a),
-      put:contribNative(S.cur,a), inGoal:a.inGoal!==false, color:acctColor(a)};
+      put:contribNative(S.cur,a), color:acctColor(a)};
   });
-  const goalAccts = accts.filter(x=>x.inGoal), now_ = goalAccts.map(x=>x.now), vNow=sum(now_);
+  const goalAccts = accts, now_ = goalAccts.map(x=>x.now), vNow=sum(now_);
   let totalIn=0, monthsWith=0; const hist=[];
   for (let i=s0;i<=si;i++){
     const k=keyOf(i), c=contribOf(k); totalIn+=c;
@@ -987,7 +995,6 @@ function viewGoal(){
   const R=34, C=2*Math.PI*R, endName=monthName(keyOf(g.ei-1)), prevName=monthName(keyOf(g.si-1));
   const paceOk = g.pace!=null && isFinite(g.pace) && g.si+g.pace<=g.ei;
   const totalPos = sum(g.accts.map(x=>Math.max(0,x.now)))||1;
-  const passive = g.accts.filter(x=>!x.inGoal);
   const allKnown = g.accts.every(x=>x.known);
   const gainAll = sum(g.accts.map(x=>conv(x.gain, x.cur, gc, trmOf(keyOf(g.si)))));
   const noGoal = `<div class="card empty">Ninguna cuenta está marcada como “Cuenta para mi meta”. Toca una cuenta y activa la opción para seguir tu meta.</div>`;
@@ -1002,23 +1009,24 @@ function viewGoal(){
         ${pct>0?`<circle cx="40" cy="40" r="${R}" fill="none" stroke="var(--orange)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C*pct/100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 40 40)"/>`:''}
         <text x="40" y="45" text-anchor="middle" font-size="15" font-weight="700" fill="var(--label)" font-family="var(--font)">${pct<10?pctTxt(Math.round(pct*10)/10):Math.round(pct)}%</text></svg>
       <div style="min-width:0"><div style="font-weight:600">🎯 ${esc(gl.name)}</div>
-        <div class="s">${money(v,gc)} de ${money(gl.target,gc)} · ${esc(endName)}</div>
-        ${passive.length ? `<div class="s">${passive.map(x=>esc(x.a.name)).join(' y ')} ${passive.length>1?'son pasivas':'es pasiva'}: suma${passive.length>1?'n':''} al patrimonio, no a la meta.</div>` : ''}</div>
+        <div class="s">Meta ${money(gl.target,gc)} en ${esc(endName)}</div>
+        <div class="s">${v>=gl.target ? '<span class="green">¡Llegaste a tu meta!</span>' : `Te faltan ${money(gl.target-v,gc)}`}</div>
+</div>
     </div>
   </section>
 
   <div class="sec"><div class="sech"><span>Tus cuentas</span><b>${g.accts.length} ${g.accts.length===1?'cuenta':'cuentas'}</b></div>
     <div class="hscroll" id="hs-accts">
       ${g.accts.map(x=>`<button class="acard" data-act="acct" data-id="${esc(x.a.id)}">
-        <div class="atop">${avatar(x.a.emoji||'💰', x.color)}<span class="tag ${x.inGoal?'goal':''}">${x.inGoal?'🎯 Meta':'🌙 Pasiva'}</span></div>
-        <div class="aname">${esc(x.a.name)} · ${esc(rateTxt(x.a))}</div>
+        <div class="atop">${avatar(x.a.emoji||'💰', x.color)}<span class="tag">${esc(rateTxt(x.a))}</span></div>
+        <div class="aname">${esc(x.a.name)}</div>
         <div class="abal fit">${moneyBig(x.nowN,x.cur)}</div>
         ${x.cur!==gc ? `<div class="s">≈ ${money(x.now,gc)}</div>` : ''}
         <div class="s ${x.known?(x.gain>=0?'green':'red'):''}">${x.known ? `${x.gain>=0?'+':'−'}${money(Math.abs(x.gain),x.cur)} de rendimiento` : 'Pon cuánto tenías al empezar'}</div>
       </button>`).join('')}
       <button class="acard add" data-act="newAcct">${plusIc}<span>Añadir cuenta</span></button>
     </div>
-    <div class="foot">Toca una cuenta para cambiar su divisa, su tasa, su saldo, o si cuenta para tu meta.</div></div>
+    <div class="foot">Toca una cuenta para cambiar su divisa, su tasa o su saldo. Todas suman a tu patrimonio y a tu meta.</div></div>
 
   <div class="sec"><div class="sech"><span>¿Cómo vas con tu meta?</span></div>${hasGoal ? `<div class="card">
     <span class="pill ${status[0]}" style="margin:0">${status[1]}</span>
@@ -1031,7 +1039,7 @@ function viewGoal(){
     ${g.goalAccts.map(x=>`<div class="cell">${avatar(x.a.emoji||'💰',x.color,'sm')}<div class="main">Aportaste a ${esc(x.a.name)}</div><div class="v orange">${money(x.put,x.cur)}</div></div>`).join('')}
     <div class="cell"><div class="main">${g.put>=g.need?'Cumpliste ✓':'Te falta'}</div><div class="v ${g.put>=g.need?'green':'red'}" style="font-weight:600">${g.put>=g.need?(g.put>g.need?'+'+money(g.put-g.need,gc):'—'):money(g.need-g.put,gc)}</div></div>
     <button class="cell blue" data-act="goalTx">${plusIc}<span>Registrar un aporte</span></button>
-  </div><div class="foot">Solo cuentan las cuentas marcadas con 🎯. Si aportas más, los siguientes meses te piden menos, y al revés.</div></div>
+  </div><div class="foot">Si aportas más, los siguientes meses te piden menos, y al revés.</div></div>
 
   <div class="sec"><div class="sech"><span>Si sigues aportando igual</span></div><div class="list">
     <div class="cell"><label for="g-typical">Suelo aportar al mes</label><input id="g-typical" inputmode="decimal" value="${plain(gl.typical,gc)}" placeholder="${g.paceP?plain(Math.round(g.paceP),gc):'0'}" data-g="typical" autocomplete="off"><span class="muted">${gc}</span></div>
@@ -1041,13 +1049,13 @@ function viewGoal(){
   </div>${g.paceP!=null?`<div class="foot">${paceOk?`<span class="green">Llegas antes o a tiempo (${esc(endName)}).</span>`:`<span class="orange">A ese ritmo no llegas en tu fecha.</span> Necesitas ${money(g.need,gc)} al mes, o ampliar el plazo.`} Si lo dejas vacío, uso el promedio de tus aportes registrados.</div>`:''}</div>` : ''}
 
   <div class="sec"><div class="sech"><span>De dónde sale tu plata</span></div><div class="list">
-    ${g.accts.map(x=>`<div class="cell">${avatar(x.a.emoji||'💰',x.color,'sm')}<div class="main">${esc(x.a.name)}<div class="s">Pusiste ${money(x.pocket,x.cur)}${x.inGoal?'':' · pasiva'}</div></div><div class="v">${money(x.nowN,x.cur)}<small class="${x.known?(x.gain>=0?'green':'red'):''}">${x.known ? (x.gain>=0?'+':'−')+money(Math.abs(x.gain),x.cur) : 'rendimiento ?'}</small></div></div>`).join('')}
+    ${g.accts.map(x=>`<div class="cell">${avatar(x.a.emoji||'💰',x.color,'sm')}<div class="main">${esc(x.a.name)}<div class="s">Pusiste ${money(x.pocket,x.cur)}</div></div><div class="v">${money(x.nowN,x.cur)}<small class="${x.known?(x.gain>=0?'green':'red'):''}">${x.known ? (x.gain>=0?'+':'−')+money(Math.abs(x.gain),x.cur) : 'rendimiento ?'}</small></div></div>`).join('')}
     <div class="cell"><div class="main"><b>Patrimonio total</b><div class="s">${allKnown ? `Ha generado ${gainAll>=0?'+':'−'}${money(Math.abs(gainAll),gc)}` : 'Para ver el rendimiento total, pon en cada cuenta cuánto tenías al empezar.'}</div></div><div class="v" style="font-weight:700">${money(g.patrimonio,gc)}</div></div>
   </div></div>
 
   ${hasGoal ? `<div class="sec"><div class="sech"><span>Proyección de tu meta</span></div><div class="chart">${chartSvg(g)}
     <div class="legend"><span><i style="background:var(--orange)"></i>Lo que tienes</span><span><i style="background:var(--blue)"></i>Si aportas lo necesario</span>${g.paceP!=null?'<span><i style="background:var(--label2)"></i>Si sigues aportando igual</span>':''}</div></div>
-    <div class="foot">La línea punteada horizontal es tu meta. Si la línea gris la cruza antes del final, llegas a tiempo. Tus aportes nuevos se calculan al ${pctTxt(blendedEA())} % EA, el promedio de tus cuentas de la meta.</div></div>
+    <div class="foot">La línea punteada horizontal es tu meta. Si la línea gris la cruza antes del final, llegas a tiempo. Tus aportes nuevos se calculan al ${pctTxt(blendedEA())} % EA, el promedio de tus cuentas.</div></div>
 
   <div class="sec"><div class="sech"><span>Tus aportes y saldos</span></div><div class="list">
     ${g.hist.length ? g.hist.slice().reverse().map(h=>`<button class="cell" data-act="goMonthGoal" data-v="${h.k}">${avatar('🗓️','#8E8E93','sm')}<div class="main"><div class="t">${esc(cap(monthName(h.k)))}</div>
@@ -1067,7 +1075,7 @@ function viewGoal(){
 
   ${hasGoal ? `<div class="sec"><div class="sech"><span>¿Y si cambio el plazo?</span></div><div class="list">
     ${[2,3,5,7,10,15,20].map(y=>{ const p=pmtAll(g.now,gl.target,y*12); return `<div class="cell"><div class="main">Llegar en ${y} años desde hoy</div><div class="v">${p>0?`${money(p,gc)}<small>al mes</small>`:'<span class="green">$ 0</span><small>llegas solo con el interés</small>'}</div></div>`; }).join('')}
-  </div><div class="foot">Aporte mensual necesario partiendo de los ${money(v,gc)} que tienes hoy en las cuentas de tu meta.</div></div>` : ''}`;
+  </div><div class="foot">Aporte mensual necesario partiendo de los ${money(v,gc)} que tienes hoy entre todas tus cuentas.</div></div>` : ''}`;
 }
 function chartSvg(g){
   const gl=g.gl, s0=g.s0, ei=g.ei, si=g.si, W=360, H=210, L=44, R=10, T=12, B=24;
@@ -1176,10 +1184,10 @@ function sheetHtml(){
   } else if (sh.type==='item'){
     const m=getMonth(S.cur,false), trm=trmOf(S.cur);
     const it = sh.id ? (findItem(m,sh.id)||{}).it : null;
-    title = sh.id ? 'Editar categoría' : sh.g==='income' ? 'Nueva fuente de ingreso' : 'Nueva categoría';
+    title = sh.id ? (it ? it.name : 'Editar') : sh.g==='income' ? 'Nueva fuente de ingreso' : sh.g==='invest' ? 'Nueva línea de aporte' : 'Nuevo gasto';
     const txs = it ? m.tx.filter(x=>x.itemId===it.id).sort((a,b)=>(b.date||'').localeCompare(a.date||'')) : [];
     const col = it ? colorOf(it,sh.g) : COLORS[hashStr(d.name||'x')%COLORS.length];
-    const ac = accounts();
+    const ac = accounts(), isExp = sh.g==='fixed' || sh.g==='variable', last = it && isExp ? lastMonthSpent(S.cur,it) : 0;
     body = `
       ${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
       <div class="sheethero"><button type="button" class="avbtn" data-act="togglePick" aria-label="Cambiar ícono">${avatar(d.emoji || emojiOf({name:d.name, acct:d.acct}, sh.g), col, 'lg')}<span>Cambiar ícono</span></button></div>
@@ -1187,18 +1195,23 @@ function sheetHtml(){
       <div class="sec" style="margin-top:12px"><div class="sech"><span>${GROUP_EMOJI[sh.g]} ${GNAME[sh.g]}</span></div><div class="list">
         <div class="cell"><label for="s-name">Nombre</label><input id="s-name" value="${esc(d.name)}" placeholder="Ej. Gimnasio" data-draft="name" autocomplete="off"></div>
         <div class="cell"><span>Divisa</span><span style="flex:1"></span>${seg('draft','cur',d.cur)}</div>
-        <div class="cell"><label for="s-planned">${sh.g==='income'?'Espero recibir':sh.g==='invest'?'Planeo aportar':'Presupuesto'} al mes</label><input id="s-planned" inputmode="decimal" placeholder="0" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
+        ${isExp ? `<div class="cell"><label for="s-spend">${it ? 'Anotar un gasto' : '¿Cuánto gastaste?'}</label><input id="s-spend" inputmode="decimal" placeholder="0" value="${esc(d.spend)}" data-draft="spend" autocomplete="off"><span class="muted">${d.cur}</span></div>`
+          : `<div class="cell"><label for="s-planned">${sh.g==='income'?'Espero recibir':'Planeo aportar'} al mes</label><input id="s-planned" inputmode="decimal" placeholder="0" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>`}
         ${sh.g==='invest' && ac.length>1 ? `<div class="cell"><span>Cuenta</span><span style="flex:1"></span>${seg('draft','acct',d.acct,ac.map(a=>a.id),false,Object.fromEntries(ac.map(a=>[a.id,esc(a.name)])))}</div>` : ''}
-        ${sh.g!=='income' && sh.g!=='invest' ? `<div class="cell"><span>Tipo</span><span style="flex:1"></span>${seg('draft','bucket',d.bucket,['n','g','s'],false,{n:'Necesidad',g:'Gusto',s:'Ahorro'})}</div>` : ''}
       </div><div class="foot">${sh.g==='income'
         ? 'Pon cuánto esperas ganar en el mes por esta fuente. Abajo registras lo que de verdad te va llegando.'
         : sh.g==='invest' ? 'Lo que aportes aquí suma a la cuenta elegida y a tu meta de inversión.'
-        : d.bucket==='n' ? 'Necesidad: lo que tienes que pagar sí o sí.' : d.bucket==='g' ? 'Gusto: lo que podrías recortar si hace falta.' : 'Ahorro: fondo de emergencia u otro ahorro.'}</div></div>
+        : 'El monto se anota como gasto de hoy. Si fue otro día, usa el botón + de abajo.'}</div></div>
+      ${isExp && last>0 && !txs.length ? `<div class="sec" style="margin-top:14px"><button class="btn tint" data-act="paySame">Pagué lo mismo que el mes pasado · ${money(last,itemCur(it))}</button></div>` : ''}
       ${it && sh.g==='income' && (Number(it.planned)||0)-actualOf(m,it,trm)>0.004 ? `<div class="sec" style="margin-top:16px"><button class="btn" data-act="incomeFull">Ya me llegó completo · ${money((Number(it.planned)||0)-actualOf(m,it,trm),itemCur(it))}</button></div>`:''}
-      ${it ? `<div class="sec"><div class="sech"><span>${sh.g==='income'?'Lo que te ha llegado en':'Movimientos de'} ${esc(monthOnly(S.cur))}</span><b class="n">${money(actualOf(m,it,trm),itemCur(it))}</b></div><div class="list">
+      ${it ? `<div class="sec"><div class="sech"><span>${sh.g==='income'?'Lo que te ha llegado en':isExp?'Gastado en':'Movimientos de'} ${esc(monthOnly(S.cur))}</span><b class="n">${money(actualOf(m,it,trm),itemCur(it))}</b></div><div class="list">
         ${txs.map(x=>`<button class="cell" data-act="editTx" data-id="${esc(x.id)}"><div class="main"><div class="t">${esc(x.note||'Sin nota')}</div><div class="s">${esc(cap(dayLabel(x.date||S.cur+'-01')))}</div></div><div class="v">${money(x.amount,x.cur||itemCur(it))}</div><span class="arrow">${IC.chev}</span></button>`).join('')}
-        <button class="cell blue" data-act="itemTx">${plusIc}<span>${sh.g==='income'?'Registrar otro monto recibido':'Anotar movimiento'}</span></button></div></div>` : ''}
-      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${sh.id?'Guardar':'Añadir'}</button>
+        <button class="cell blue" data-act="itemTx">${plusIc}<span>${sh.g==='income'?'Registrar otro monto recibido':isExp?'Anotar un gasto de otro día':'Anotar movimiento'}</span></button></div></div>` : ''}
+      ${isExp ? `<div class="sec"><div class="sech"><span>Opcional</span></div><div class="list">
+        <div class="cell"><label for="s-planned">Límite al mes</label><input id="s-planned" inputmode="decimal" placeholder="Sin límite" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
+        <div class="cell"><span>Tipo</span><span style="flex:1"></span>${seg('draft','bucket',d.bucket,['n','g','s'],false,{n:'Necesidad',g:'Gusto',s:'Ahorro'})}</div>
+      </div><div class="foot">Si le pones un límite, te aviso cuánto te queda y cuándo te pasas. ${d.bucket==='n' ? 'Necesidad: lo que tienes que pagar sí o sí.' : d.bucket==='g' ? 'Gusto: lo que podrías recortar si hace falta.' : 'Ahorro: fondo de emergencia u otro ahorro.'}</div></div>` : ''}
+      <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${isExp && parseNum(d.spend)>0 ? 'Guardar gasto' : sh.id ? 'Guardar' : 'Añadir'}</button>
       ${it ? (sh.confirm ? `<div class="card" style="margin-top:10px">¿Eliminar “${esc(it.name)}”${txs.length?` y sus ${txs.length} movimiento${txs.length>1?'s':''} de este mes`:''}?
           <div class="btnrow"><button class="btn danger small" data-act="itemDelete">Eliminar</button><button class="btn tint small" data-act="itemDeleteNo">Cancelar</button></div></div>`
         : `<button class="btn danger" style="margin-top:10px" data-act="itemDeleteAsk">Eliminar categoría</button>`) : ''}</div>`;
@@ -1217,10 +1230,6 @@ function sheetHtml(){
         <div class="cell"><label for="a-rate">Rentabilidad</label><input id="a-rate" inputmode="decimal" value="${esc(d.rate)}" placeholder="0" data-draft="rate" autocomplete="off"><span class="muted">%</span></div>
         <div class="cell"><span>La tasa es</span><span style="flex:1"></span>${seg('draft','rateType',d.rateType,['EA','EM'],false,{EA:'Anual (EA)',EM:'Mensual'})}</div>
       </div><div class="foot">Equivale a ${pctTxt(ea)} % EA, o ${pctTxt(em)} % mensual compuesto. Si tu app dice “% E.A.” elige Anual.</div></div>
-      <div class="sec"><div class="list">
-        <div class="cell"><div class="main">Cuenta para mi meta<div class="s">${d.inGoal ? 'Suma a tu meta y entra en “Debes aportar”.' : 'Inversión pasiva: suma a tu patrimonio, sin meta ni aportes.'}</div></div>
-          <button type="button" class="switch" role="switch" aria-checked="${!!d.inGoal}" aria-label="Cuenta para mi meta" data-act="toggleInGoal"><span></span></button></div>
-      </div><div class="foot">Apágalo para plata que solo dejas creciendo (por ejemplo una cajita). Puedes volver a activarlo cuando quieras.</div></div>
       <div class="sec"><div class="list">
         <div class="cell"><label for="a-init">Tenía en ${esc(monthShort(goal().start||todayKey))}</label><input id="a-init" inputmode="decimal" value="${esc(d.initial)}" placeholder="0" data-draft="initial" autocomplete="off"><span class="muted">${d.cur}</span></div>
         <div class="cell"><label for="a-real">Saldo real hoy</label><input id="a-real" inputmode="decimal" value="${esc(d.real)}" placeholder="${a?plain(Math.round((goalStats().accts.find(x=>x.a.id===a.id)||{}).nowN||0),d.cur)||'0':'0'}" data-draft="real" autocomplete="off"><span class="muted">${d.cur}</span></div>
@@ -1288,7 +1297,7 @@ function openTx(id, preset={}){
 function openItem(g, id){
   const m=getMonth(S.cur,false), wasOpen=!!S.sheet;
   if (id){ const fi=findItem(m,id); if (!fi) return;
-    S.sheet={type:'item', g:fi.kind, id, anim:!wasOpen, draft:{name:fi.it.name, planned:plain(fi.it.planned,itemCur(fi.it)), cur:itemCur(fi.it), bucket:bucketOf(fi.it,fi.kind), emoji:fi.it.emoji||null, acct:fi.kind==='invest'?itemAcct(fi.it):null}}; }
+    S.sheet={type:'item', g:fi.kind, id, anim:!wasOpen, draft:{name:fi.it.name, planned:plain(fi.it.planned,itemCur(fi.it)), cur:itemCur(fi.it), bucket:bucketOf(fi.it,fi.kind), emoji:fi.it.emoji||null, acct:fi.kind==='invest'?itemAcct(fi.it):null, spend:''}}; if (fi.kind==='fixed'||fi.kind==='variable') S._focus='s-spend'; }
   else { S.sheet={type:'item', g, anim:!wasOpen, draft:{name:'', planned:'', cur:g==='invest'?gcur():base(), bucket:g==='invest'?'s':g==='fixed'?'n':'g', emoji:null, acct:g==='invest'?(accounts()[0]||{}).id:null}}; S._focus='s-name'; }
 }
 function openAcct(id){
@@ -1296,8 +1305,8 @@ function openAcct(id){
   const ac = a ? acctCur(a) : gc;
   const real = a && m && m.balances && m.balances[a.id]!=null && m.balances[a.id]!=='' ? plain(m.balances[a.id],ac) : '';
   S.sheet={type:'acct', id:a?a.id:null, anim:!S.sheet, draft: a
-    ? {name:a.name, emoji:a.emoji||'💰', rate:String(a.rate??'').replace('.',','), rateType:a.rateType||'EA', initial:plain(a.initial,ac), real, cur:ac, inGoal:a.inGoal!==false}
-    : {name:'', emoji:'🏦', rate:'', rateType:'EA', initial:'', real:'', cur:gc, inGoal:true}};
+    ? {name:a.name, emoji:a.emoji||'💰', rate:String(a.rate??'').replace('.',','), rateType:a.rateType||'EA', initial:plain(a.initial,ac), real, cur:ac}
+    : {name:'', emoji:'🏦', rate:'', rateType:'EA', initial:'', real:'', cur:gc}};
   if (!a) S._focus='a-name';
 }
 function sheetSave(){
@@ -1330,13 +1339,15 @@ function sheetSave(){
     const apply = it => { it.name=name; it.planned=parseNum(d.planned); it.cur=d.cur; if (d.emoji) it.emoji=d.emoji;
       if (sh.g!=='income' && sh.g!=='invest') it.bucket=d.bucket; if (sh.g==='invest' && d.acct) it.acct=d.acct; };
     if (sh.id){ const fi=findItem(m,sh.id); if (fi) apply(fi.it); }
-    else { const it={id:uid()}; apply(it); m.groups[sh.g].push(it); }
-    saveMonth(S.cur); S.sheet=null; toast(sh.id?'Categoría guardada':'Categoría añadida');
+    else { const it={id:uid()}; apply(it); m.groups[sh.g].push(it); sh.newId=it.id; }
+    const spend=parseNum(d.spend), itemId=sh.id||sh.newId;
+    if ((sh.g==='fixed'||sh.g==='variable') && spend>0){ m.tx.push({id:uid(), itemId, amount:spend, cur:d.cur, date:defDate(), note:''}); S.lastItem=itemId; }
+    saveMonth(S.cur); S.sheet=null; toast(spend>0 && (sh.g==='fixed'||sh.g==='variable') ? `Gasto anotado en ${name} ✓` : sh.id ? 'Guardado' : 'Añadido');
   } else if (sh.type==='acct'){
     const name=(d.name||'').trim(); if (!name){ sh.err='Ponle un nombre a la cuenta'; S._focus='a-name'; return render(); }
     const g=goal(); let a=sh.id ? acctById(sh.id) : null;
     if (!a){ a={id:uid()}; g.accounts.push(a); }
-    a.name=name; a.emoji=d.emoji; a.rate=Math.max(0,parseNum(d.rate)); a.rateType=d.rateType; a.initial=Math.max(0,parseNum(d.initial)); a.cur=d.cur; a.inGoal=!!d.inGoal;
+    a.name=name; a.emoji=d.emoji; a.rate=Math.max(0,parseNum(d.rate)); a.rateType=d.rateType; a.initial=Math.max(0,parseNum(d.initial)); a.cur=d.cur; delete a.inGoal;
     saveSettings();
     const m=getMonth(S.cur,true);
     if (!sh.id) ensureAcctItem(m,a.id);
@@ -1439,7 +1450,9 @@ document.addEventListener('click', e => {
     case 'txDate': S.sheet.draft.date=b.dataset.v; break;
     case 'key': keyPress(b.dataset.v); return;
     case 'togglePick': S.sheet.pick=!S.sheet.pick; break;
-    case 'toggleInGoal': S.sheet.draft.inGoal=!S.sheet.draft.inGoal; break;
+    case 'paySame': { const sh=S.sheet, m=getMonth(S.cur,true), fi=findItem(m,sh.id); if (!fi) break; const amt=lastMonthSpent(S.cur,fi.it);
+      if (amt>0){ m.tx.push({id:uid(), itemId:fi.it.id, amount:Math.round(amt*100)/100, cur:itemCur(fi.it), date:defDate(), note:'Igual que el mes pasado'}); saveMonth(S.cur); toast(`Gasto anotado en ${fi.it.name} ✓`); }
+      S.sheet=null; break; }
     case 'pickEmoji': S.sheet.draft.emoji=b.dataset.v; S.sheet.pick=false; break;
     case 'trm': { const m=S.months[S.cur]; S.sheet={type:'trm', anim:true, draft:{trm: m&&m.trm ? plain(m.trm,'COP') : ''}}; S._focus='s-trm'; break; }
     case 'sheetClose': S.sheet=null; break;
@@ -1484,6 +1497,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const el=e.target;
+  if (el.id==='s-spend'){ const bt=document.querySelector('.sheet .btn[data-act="sheetSave"]'); if (bt && S.sheet && S.sheet.type==='item') bt.textContent = parseNum(el.value)>0 ? 'Guardar gasto' : (S.sheet.id ? 'Guardar' : 'Añadir'); }
   if (el.dataset.draft && S.sheet){ S.sheet.draft[el.dataset.draft]=el.value; if (S.sheet.err){ S.sheet.err=null; const er=document.querySelector('.sheet .err'); if (er) er.remove(); } }
   if (el.id==='g-years'){ const yl=document.getElementById('g-yl'); if (yl) yl.textContent=el.value; }
 });
