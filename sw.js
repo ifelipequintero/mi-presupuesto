@@ -1,5 +1,5 @@
 // Network first so updates arrive; cache fallback so the app opens without internet.
-const CACHE = 'mi-presupuesto-v2';
+const CACHE = 'mi-presupuesto-v3';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

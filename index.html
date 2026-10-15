@@ -190,6 +190,7 @@ const todayDate = `${todayKey}-${pad(now.getDate())}`;
 const idxOf = k => { const [y,m] = String(k).split('-').map(Number); return y*12 + (m-1); };
 const keyOf = i => `${Math.floor(i/12)}-${pad(i%12+1)}`;
 const dt = (k,o) => { const [y,m]=k.split('-').map(Number); return new Intl.DateTimeFormat('es-CO',o).format(new Date(y,m-1,1)); };
+const cap = t => t ? t[0].toUpperCase()+t.slice(1) : t;
 const monthName = k => dt(k,{month:'long',year:'numeric'});
 const monthOnly = k => dt(k,{month:'long'});
 const monthShort = k => dt(k,{month:'short',year:'numeric'});
@@ -664,77 +665,117 @@ function itemOptions(m, selId){
 }
 
 /* ---------- investment ---------- */
-function viewGoal(){
-  const gl=goal(), gc=gcur(), si=Math.max(idxOf(S.cur), startIdx()), ei=endIdx();
+/* how the goal is going, in plain numbers (shared by the view and tests) */
+function goalStats(){
+  const gl=goal(), gc=gcur(), s0=startIdx(), ei=endIdx(), ci=idxOf(S.cur), si=Math.max(ci,s0);
+  const initial=Number(gl.initial)||0, total=ei-s0;
   const vPrev=valueBefore(si), v=valueAt(si), remainingM=Math.max(0,ei-si);
-  const need=pmt(vPrev, gl.target, remainingM), needStart=pmt(Number(gl.initial)||0, gl.target, ei-startIdx());
-  const avg=avgContrib(idxOf(S.cur)), pace = avg==null ? null : monthsToReach(v, avg, gl.target);
+  const need=pmt(vPrev, gl.target, remainingM), put=contribOf(S.cur);
+  const planP=pmt(initial, gl.target, total);
+  // where the plan says you should be at the end of last month, vs where you are (incl. this month's aportes so far)
+  const done=Math.max(0,Math.min(total, si-s0));
+  const expected=fv(initial, planP, done);
+  // aportes registrados
+  let totalIn=0, monthsWith=0; const hist=[];
+  for (let i=s0;i<=si;i++){ const k=keyOf(i), c=contribOf(k), m=S.months[k];
+    const real = m && m.portfolio!=null && m.portfolio!=='' ? Number(m.portfolio) : null;
+    totalIn+=c; if (c>0 && i<ci) monthsWith++;
+    if (c>0 || real!=null) hist.push({k, c, real});
+  }
+  const recorded = monthsWith ? hist.filter(h=>idxOf(h.k)<ci).reduce((a,h)=>a+h.c,0)/monthsWith : (put>0 ? put : null);
+  const typical = Number(gl.typical)||0;
+  const paceP = typical>0 ? typical : recorded;
+  const paceSrc = typical>0 ? 'el aporte mensual que pusiste' : monthsWith ? `el promedio de ${monthsWith} mes${monthsWith>1?'es':''} con aportes` : put>0 ? 'lo que aportaste este mes' : '';
+  // today = end of last month + this month's aportes, or the real balance if given for this month
+  const mNow=S.months[keyOf(si)], realNow = mNow && mNow.portfolio!=null && mNow.portfolio!=='' ? Number(mNow.portfolio) : null;
+  const vNow = realNow!=null ? realNow : vPrev+put, have=vNow;
+  const pace = paceP==null ? null : monthsToReach(vNow, paceP, gl.target);
+  let lastReal=null; for (let i=si;i>=s0;i--){ const m=S.months[keyOf(i)]; if (m && m.portfolio!=null && m.portfolio!==''){ lastReal=keyOf(i); break; } }
+  return {gl, gc, s0, ei, ci, si, initial, total, vPrev, v:vNow, remainingM, need, put, planP, done, expected, have, totalIn, hist, paceP, paceSrc, pace, lastReal,
+    pocket: initial+totalIn, gain: vNow-(initial+totalIn)};
+}
+function viewGoal(){
+  const g=goalStats(), {gl, gc, v}=g;
   const pct=Math.max(0,Math.min(100, v/gl.target*100));
-  const timePct=Math.min(100, Math.max(0,(idxOf(S.cur)-startIdx()+1)/(ei-startIdx())*100));
-  const totalIn = Math.min(gl.target, vPrev + need*remainingM), interest = Math.max(0, gl.target - totalIn);
-  const put=contribOf(S.cur), m=S.months[S.cur];
-  const status = pct>=timePct-2 ? ['ok','Vas a tiempo'] : pct>=timePct*0.75 ? ['warn','Un poco atrasado'] : ['bad','Vas atrasado'];
-  const R=40, C=2*Math.PI*R;
+  const diff=g.have-g.expected, tol=gl.target*0.005;
+  const status = g.done===0 ? ['ok','Recién empiezas'] : diff>=tol ? ['ok','Vas adelantado'] : diff>=-tol ? ['ok','Vas al día'] : diff>=-g.planP*2 ? ['warn','Un poco atrasado'] : ['bad','Vas atrasado'];
+  const R=40, C=2*Math.PI*R, endName=monthName(keyOf(g.ei-1)), prevName=monthName(keyOf(g.si-1));
+  const investItem = (getMonth(S.cur,false).groups.invest||[])[0];
+  const m=S.months[S.cur];
+  const paceOk = g.pace!=null && isFinite(g.pace) && g.si+g.pace<=g.ei;
   return `
   <div class="sum">
     <div class="ring">
       <svg viewBox="0 0 92 92" role="img" aria-label="${pct.toFixed(0)} % de la meta"><circle cx="46" cy="46" r="${R}" fill="none" stroke="var(--fill)" stroke-width="10"/>
         <circle cx="46" cy="46" r="${R}" fill="none" stroke="var(--orange)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(C*pct/100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 46 46)"/>
         <text x="46" y="51" text-anchor="middle" font-size="16" font-weight="700" fill="var(--label)" font-family="var(--font)">${pct<10?pct.toFixed(1):pct.toFixed(0)}%</text></svg>
-      <div style="min-width:0"><div class="eyebrow">${esc(gl.name)}</div><div class="big" style="font-size:30px">${money(v,gc)}</div>
-        <div class="s muted" style="font-size:14px">de ${money(gl.target,gc)} · faltan ${money(Math.max(0,gl.target-v),gc)}</div></div>
+      <div style="min-width:0"><div class="eyebrow">Hoy tienes</div><div class="big" style="font-size:30px">${money(v,gc)}</div>
+        <div class="s muted" style="font-size:14px">Meta ${money(gl.target,gc)} en ${esc(endName)}</div></div>
     </div>
-    <div class="meter"><i style="width:${pct}%"></i><b style="left:${timePct}%"></b></div>
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:8px"><span class="pill ${status[0]}" style="margin:0">${status[1]}</span><span class="muted" style="font-size:13px">${timePct.toFixed(0)} % del plazo · meta ${esc(monthShort(keyOf(ei-1)))}</span></div>
+    <div class="note" style="padding:10px 0 0;background:none;font-size:13px">${g.lastReal ? `Usa el saldo real que pusiste para ${esc(monthName(g.lastReal))}${g.lastReal!==keyOf(g.si)?', más tus aportes y el interés desde entonces':''}.` : 'Es un estimado: lo que tenías al empezar, más tus aportes registrados, más el interés. Pon tu saldo real abajo para que sea exacto.'}</div>
   </div>
 
-  <div class="sec"><div class="sech"><span>Este mes</span></div><div class="list">
-    <div class="cell"><div class="main">Aporte necesario</div><div class="v" style="font-weight:600">${money(need,gc)}</div></div>
-    <div class="cell"><div class="main">Aportaste</div><div class="v orange" style="font-weight:600">${money(put,gc)}</div></div>
-    <div class="cell"><div class="main">${put>=need?'Superaste por':'Te falta'}</div><div class="v ${put>=need?'green':'red'}" style="font-weight:600">${money(Math.abs(need-put),gc)}</div></div>
-  </div><div class="foot">Los aportes salen de los movimientos que anotes en el grupo Inversión.</div></div>
+  <div class="sec"><div class="sech"><span>¿Cómo vas?</span></div><div class="list">
+    <div class="cell" style="display:block"><span class="pill ${status[0]}" style="margin:0">${status[1]}</span>
+      <div style="margin-top:10px;line-height:1.4">${g.done===0 ? `Tu plan arranca en ${esc(monthName(keyOf(g.s0)))}. Desde el próximo mes te digo si vas al día.`
+        : `Para llegar a tiempo, al cierre de ${esc(prevName)} deberías tener <b class="n">${money(g.expected,gc)}</b>. Tienes <b class="n">${money(g.have,gc)}</b>${Math.abs(diff)>tol?`, o sea <b class="${diff>0?'green':'red'}">${money(Math.abs(diff),gc)} ${diff>0?'por encima':'por debajo'}</b> del plan`:''}.`}</div></div>
+  </div><div class="foot">El plan es aportar ${money(g.planP,gc)} al mes desde ${esc(monthName(keyOf(g.s0)))} con ${String(gl.rate).replace('.',',')} % EA. Al principio la plata crece despacio y al final mucho más rápido por el interés compuesto; por eso comparo contra esa curva y no contra el tiempo que ha pasado.</div></div>
 
-  <div class="sec"><div class="sech"><span>Tu plan</span></div><div class="list">
-    <div class="cell"><div class="main">Aporte mensual desde el inicio</div><div class="v">${money(needStart,gc)}</div></div>
-    <div class="cell"><div class="main">Meses restantes</div><div class="v">${remainingM}</div></div>
-    <div class="cell"><div class="main">Pondrás de tu bolsillo</div><div class="v">${money(totalIn,gc)}</div></div>
-    <div class="cell"><div class="main">Lo pone el interés compuesto</div><div class="v green">${money(interest,gc)}</div></div>
+  <div class="sec"><div class="sech"><span>Este mes</span></div><div class="list">
+    <div class="cell"><div class="main">Debes aportar<div class="s">Para llegar a la meta en ${esc(endName)}</div></div><div class="v" style="font-weight:600">${money(g.need,gc)}</div></div>
+    <div class="cell"><div class="main">Llevas aportado</div><div class="v orange" style="font-weight:600">${money(g.put,gc)}</div></div>
+    <div class="cell"><div class="main">${g.put>=g.need?'Cumpliste ✓':'Te falta'}</div><div class="v ${g.put>=g.need?'green':'red'}" style="font-weight:600">${g.put>=g.need?(g.put>g.need?'+'+money(g.put-g.need,gc):'—'):money(g.need-g.put,gc)}</div></div>
+    ${investItem?`<button class="cell blue" data-act="goalTx">${IC.plus.replace('<svg','<svg style="width:18px;height:18px"')}<span>Registrar un aporte</span></button>`:''}
+  </div><div class="foot">Este número cambia cada mes: si aportas más, los siguientes meses te piden menos, y al revés.</div></div>
+
+  <div class="sec"><div class="sech"><span>Si sigues aportando igual</span></div><div class="list">
+    <div class="cell"><label for="g-typical">Suelo aportar al mes</label><input id="g-typical" inputmode="decimal" value="${plain(gl.typical,gc)}" placeholder="${g.paceP?plain(Math.round(g.paceP),gc):'0'}" data-g="typical" autocomplete="off"><span class="muted">${gc}</span></div>
+    ${g.paceP==null||g.paceP<=0 && !isFinite(g.pace) ? `<p class="empty" style="padding:16px">Escribe arriba cuánto sueles aportar al mes y te digo cuándo llegas a la meta.</p>` : `
+    <div class="cell"><div class="main">Llegas en<div class="s">Usando ${esc(g.paceSrc)}</div></div><div class="v" style="font-weight:600">${isFinite(g.pace)?fmtMonths(g.pace):'No llegas'}</div></div>
+    ${isFinite(g.pace)?`<div class="cell"><div class="main">Fecha estimada</div><div class="v">${esc(monthName(keyOf(g.si+g.pace)))}</div></div>`:''}`}
+  </div>${g.paceP>0||isFinite(g.pace)?`<div class="foot">${paceOk?`<span class="green">Llegas antes o a tiempo de tu fecha (${esc(endName)}).</span>`:`<span class="orange">A ese ritmo no llegas en tu fecha.</span> Necesitas ${money(g.need,gc)} al mes, o ampliar el plazo.`} Si lo dejas vacío, uso el promedio de tus aportes registrados.</div>`:''}</div>
+
+  <div class="sec"><div class="sech"><span>De dónde sale tu plata</span></div><div class="list">
+    <div class="cell"><div class="main">Pusiste de tu bolsillo<div class="s">Lo que tenías al empezar + aportes registrados</div></div><div class="v">${money(g.pocket,gc)}</div></div>
+    <div class="cell"><div class="main">Ha generado la inversión</div><div class="v ${g.gain>=0?'green':'red'}">${g.gain>=0?'+':'−'}${money(Math.abs(g.gain),gc)}</div></div>
+    <div class="cell"><div class="main">Total hoy</div><div class="v" style="font-weight:600">${money(v,gc)}</div></div>
   </div></div>
 
-  <div class="sec"><div class="sech"><span>A tu ritmo actual</span></div><div class="list">
-    ${avg==null ? `<p class="empty">Cuando anotes tu primer aporte te diré cuándo llegas a la meta a ese ritmo.</p>` : `
-    <div class="cell"><div class="main">Aporte promedio</div><div class="v">${money(avg,gc)}</div></div>
-    <div class="cell"><div class="main">Llegas en</div><div class="v">${fmtMonths(pace)}</div></div>
-    <div class="cell"><div class="main">Fecha estimada</div><div class="v">${isFinite(pace)?esc(monthShort(keyOf(si+pace))):'—'}</div></div>`}
-  </div>${avg!=null?`<div class="foot">${isFinite(pace)&&si+pace<=ei?'A este ritmo llegas a tiempo.':'A este ritmo no llegas en el plazo. Sube el aporte o amplía los años.'}</div>`:''}</div>
+  <div class="sec"><div class="sech"><span>Proyección</span></div><div class="chart">${chartSvg(g.si,g.vPrev,g.need,v,g.paceP)}
+    <div class="legend"><span><i style="background:var(--orange)"></i>Lo que tienes</span><span><i style="background:var(--blue)"></i>Si aportas lo necesario</span>${g.paceP!=null?'<span><i style="background:var(--label2)"></i>Si sigues aportando igual</span>':''}</div></div>
+    <div class="foot">La línea punteada horizontal es tu meta. Si la línea gris la cruza antes del final, llegas a tiempo.</div></div>
 
-  <div class="sec"><div class="sech"><span>Proyección</span></div><div class="chart">${chartSvg(si,vPrev,need,v,avg)}
-    <div class="legend"><span><i style="background:var(--orange)"></i>Tu avance</span><span><i style="background:var(--blue)"></i>Plan a tiempo</span><span><i style="background:var(--label2)"></i>A tu ritmo</span></div></div></div>
+  <div class="sec"><div class="sech"><span>Tus aportes y saldos</span></div><div class="list">
+    ${g.hist.length ? g.hist.slice().reverse().map(h=>`<button class="cell" data-act="goMonthGoal" data-v="${h.k}"><div class="main"><div class="t">${esc(cap(monthName(h.k)))}</div>
+      <div class="s">${h.c>0?`Aportaste ${money(h.c,gc)}`:'Sin aportes registrados'}${h.real!=null?` · saldo real ${money(h.real,gc)}`:''}</div></div><span class="arrow">${IC.chev}</span></button>`).join('')
+      : `<p class="empty" style="padding:16px">Aún no hay aportes registrados desde ${esc(monthName(keyOf(g.s0)))}.</p>`}
+    ${investItem?`<button class="cell blue" data-act="goalTxPast">${IC.plus.replace('<svg','<svg style="width:18px;height:18px"')}<span>Registrar un aporte de un mes pasado</span></button>`:''}
+  </div><div class="foot">Si ya venías invirtiendo, registra aquí lo que aportaste cada mes (elige la fecha). O, más fácil: pon en “Ya tenía invertido” lo que tenías en la fecha de inicio y tu saldo de hoy abajo.</div></div>
 
-  <div class="sec"><div class="sech"><span>Ajusta tu meta</span></div><div class="list">
+  <div class="sec"><div class="sech"><span>Saldo real hoy (opcional)</span></div><div class="list">
+    <div class="cell"><label for="g-port">Saldo a fin de ${esc(monthOnly(S.cur))}</label><input id="g-port" inputmode="decimal" value="${m&&m.portfolio!=null&&m.portfolio!==''?plain(m.portfolio,gc):''}" placeholder="${plain(Math.round(v),gc)||'0'}" data-g="portfolio" autocomplete="off"><span class="muted">${gc}</span></div>
+  </div><div class="foot">Lo que te muestra tu banco, fondo o broker. Cuando lo pones, la app deja de estimar y usa este número.</div></div>
+
+  <div class="sec"><div class="sech"><span>Tu meta</span></div><div class="list">
     <div class="cell"><label for="g-name">Nombre</label><input id="g-name" value="${esc(gl.name)}" data-g="name" autocomplete="off"></div>
     <div class="cell"><span>Divisa</span><span style="flex:1"></span>${seg('goal','cur',gc)}</div>
-    <div class="cell"><label for="g-target">Meta</label><input id="g-target" inputmode="decimal" value="${plain(gl.target,gc)}" data-g="target" autocomplete="off"><span class="muted">${gc}</span></div>
-    <div class="cell"><label for="g-rate">Interés efectivo anual</label><input id="g-rate" inputmode="decimal" value="${String(gl.rate).replace('.',',')}" data-g="rate" autocomplete="off"><span class="muted">% EA</span></div>
-    <div class="cell"><label for="g-initial">Ya tenía invertido</label><input id="g-initial" inputmode="decimal" value="${plain(gl.initial,gc)}" placeholder="0" data-g="initial" autocomplete="off"><span class="muted">${gc}</span></div>
-    <div class="cell"><label for="g-start">Empecé en</label><input id="g-start" type="month" value="${esc(gl.start)}" data-g="start"></div>
-    <div class="cell" style="display:block"><div style="display:flex;justify-content:space-between"><label for="g-years">Plazo</label><span><b id="g-yl">${gl.years}</b> años</span></div>
+    <div class="cell"><label for="g-target">Quiero llegar a</label><input id="g-target" inputmode="decimal" value="${plain(gl.target,gc)}" data-g="target" autocomplete="off"><span class="muted">${gc}</span></div>
+    <div class="cell"><label for="g-rate">Rentabilidad esperada</label><input id="g-rate" inputmode="decimal" value="${String(gl.rate).replace('.',',')}" data-g="rate" autocomplete="off"><span class="muted">% EA</span></div>
+    <div class="cell"><label for="g-start">Empecé a invertir en</label><input id="g-start" type="month" value="${esc(gl.start)}" data-g="start"></div>
+    <div class="cell"><label for="g-initial">Ya tenía invertido en esa fecha</label><input id="g-initial" inputmode="decimal" value="${plain(gl.initial,gc)}" placeholder="0" data-g="initial" autocomplete="off"><span class="muted">${gc}</span></div>
+    <div class="cell" style="display:block"><div style="display:flex;justify-content:space-between"><label for="g-years">Plazo desde el inicio</label><span><b id="g-yl">${gl.years}</b> años · ${esc(monthShort(keyOf(g.ei-1)))}</span></div>
       <input id="g-years" type="range" min="1" max="40" step="1" value="${gl.years}" data-g="years" style="margin-top:10px"></div>
-  </div><div class="foot">Equivale a ${(mrate()*100).toFixed(3).replace('.',',')} % mensual compuesto.</div></div>
+  </div><div class="foot">“Ya tenía invertido” es lo que tenías el mes en que empezaste, no lo de hoy. La rentabilidad EA es lo que esperas que rinda al año (equivale a ${(mrate()*100).toFixed(2).replace('.',',')} % al mes). Un CDT en Colombia suele dar entre 8 % y 11 % EA, y la bolsa a largo plazo es más variable.</div></div>
 
   <div class="sec"><div class="sech"><span>¿Y si cambio el plazo?</span></div><div class="list">
-    ${[2,3,5,7,10,15,20].map(y=>`<div class="cell"><div class="main">Llegar en ${y} años</div><div class="v">${money(pmt(v,gl.target,y*12),gc)}<small>al mes</small></div></div>`).join('')}
-  </div><div class="foot">Aporte mensual necesario desde hoy, partiendo de ${money(v,gc)}.</div></div>
-
-  <div class="sec"><div class="sech"><span>Saldo real (opcional)</span></div><div class="list">
-    <div class="cell"><label for="g-port">Fin de ${esc(monthOnly(S.cur))}</label><input id="g-port" inputmode="decimal" value="${m&&m.portfolio!=null&&m.portfolio!==''?plain(m.portfolio,gc):''}" placeholder="${plain(v,gc)||'0'}" data-g="portfolio" autocomplete="off"><span class="muted">${gc}</span></div>
-  </div><div class="foot">Si tu fondo o broker muestra un saldo distinto al estimado, escríbelo y lo uso desde este mes.</div></div>`;
+    ${[2,3,5,7,10,15,20].map(y=>{ const p=pmt(v,gl.target,y*12); return `<div class="cell"><div class="main">Llegar en ${y} años desde hoy</div><div class="v">${p>0?`${money(p,gc)}<small>al mes</small>`:'<span class="green">$ 0</span><small>llegas solo con el interés</small>'}</div></div>`; }).join('')}
+  </div><div class="foot">Aporte mensual necesario partiendo de los ${money(v,gc)} que tienes hoy.</div></div>`;
 }
 function chartSvg(si, vPrev, need, v, avg){
   const gl=goal(), s0=startIdx(), ei=endIdx(), W=360, H=210, L=44, R=10, T=12, B=24;
-  const hist=[[s0-1, Number(gl.initial)||0]]; for (let i=s0;i<=Math.min(si,ei-1);i++) hist.push([i, valueAt(i)]);
+  const hist=[[s0-1, Number(gl.initial)||0]]; for (let i=s0;i<=Math.min(si,ei-1);i++) hist.push([i, i===si ? v : valueAt(i)]);
   const plan=[[si-1,vPrev]]; for (let k=1;k<=ei-si;k++) plan.push([si-1+k, fv(vPrev,need,k)]);
-  const pace=[]; if (avg!=null){ pace.push([si,v]); for (let k=1;k<=ei-si-1;k++) pace.push([si+k, fv(v,avg,k)]); }
+  const pace=[]; if (avg!=null && avg>=0){ pace.push([si,v]); for (let k=1;k<=ei-si-1;k++) pace.push([si+k, fv(v,avg,k)]); }
   const maxV = Math.max(gl.target, ...pace.map(p=>p[1]), ...hist.map(p=>p[1]))*1.1 || 1;
   const x=i=>L+(i-(s0-1))/(ei-(s0-1))*(W-L-R), y=val=>T+(1-Math.max(0,val)/maxV)*(H-T-B);
   const path=pts=>pts.map((p,j)=>`${j?'L':'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
@@ -975,6 +1016,9 @@ document.addEventListener('click', e => {
     case 'ruleOpt': { const d=S.sheet.draft; d.opts[d.active]={n:parseNum(d.n),g:parseNum(d.g),s:parseNum(d.s)}; d.active=b.dataset.v; const o=d.opts[d.active]; d.n=String(o.n); d.g=String(o.g); d.s=String(o.s); S.sheet.err=null; break; }
     case 'ruleReset': { const d=S.sheet.draft, R=RULES[d.active]; d.n=String(R.n); d.g=String(R.g); d.s=String(R.s); S.sheet.err=null; break; }
     case 'trmRefresh': fetchTRM(true); return;
+    case 'goalTx': case 'goalTxPast': { const it=(getMonth(S.cur,false).groups.invest||[])[0]; if (!it) break; openTx(null, it.id);
+      if (a==='goalTxPast'){ S.sheet.draft.date=`${keyOf(idxOf(S.cur)-1)}-01`; S._focus='s-amt'; } break; }
+    case 'goMonthGoal': S.cur=b.dataset.v; render(); window.scrollTo(0,0); return;
     case 'incomeFull': { const sh=S.sheet, m=getMonth(S.cur,true), fi=findItem(m,sh.id); if (!fi) break;
       const rest=(Number(fi.it.planned)||0)-actualOf(m,fi.it,trmOf(S.cur));
       if (rest>0){ m.tx.push({id:uid(), itemId:fi.it.id, amount:Math.round(rest*100)/100, cur:itemCur(fi.it), date:defDate(), note:'Pago completo'}); saveMonth(S.cur); toast('Ingreso registrado'); }
@@ -1025,6 +1069,7 @@ document.addEventListener('change', e => {
   if (el.dataset.g){
     const k=el.dataset.g, g=S.settings.goal;
     if (k==='portfolio'){ const m=getMonth(S.cur,true); m.portfolio = el.value.trim()==='' ? null : parseNum(el.value); saveMonth(S.cur); return scheduleRender(); }
+    if (k==='typical'){ g.typical = el.value.trim()==='' ? 0 : Math.max(0,parseNum(el.value)); saveSettings(); return scheduleRender(); }
     if (k==='name') g.name=el.value.trim()||'Mi meta de inversión';
     else if (k==='rate') g.rate=Math.max(0,parseNum(el.value));
     else if (k==='target') g.target=Math.max(1,parseNum(el.value)||1);
