@@ -280,12 +280,6 @@ button.stat:active{background:var(--fill)}
 .pstatus .more{display:flex;align-items:center;gap:6px;color:var(--blue);font-size:14px;white-space:nowrap}
 .pstatus .more svg{width:7px;height:12px}
 
-.swipe{position:relative;overflow:hidden}
-.swipe .sw-del{position:absolute;top:0;bottom:0;right:0;width:96px;background:var(--red);color:#fff;font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 6px;line-height:1.2}
-.swipe .sw-content{background:var(--card);transition:transform .22s ease;z-index:1}
-.swipe.dragging .sw-content{transition:none}
-.swipe.open .sw-content{transform:translateX(-96px)}
-.swipe + .swipe > .cell::before,.cell + .swipe > .cell::before,.swipe + .cell::before{content:"";position:absolute;top:0;left:16px;right:0;border-top:.5px solid var(--sep)}
 .toast{display:flex;align-items:center;gap:12px}
 .toast button{color:var(--blue);font-weight:700}
 </style>
@@ -296,6 +290,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
+const APP_VERSION = '15';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
@@ -1233,6 +1228,7 @@ function viewMore(){
   <div class="sec"><div class="sech"><span>Estado del guardado</span></div><div class="list">
     <div class="cell"><div class="main">Dónde se guarda</div><div class="v ${S.mode==='local'?'red':'green'}">${S.mode==='db'?'Tu cuenta de Claude':S.mode==='device'?'En este teléfono':'No se está guardando'}</div></div>
     <div class="cell"><div class="main">Último guardado</div><div class="v">${DIAG.lastSaved?DIAG.lastSaved.toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit'}):'—'}</div></div>
+    <div class="cell"><div class="main">Versión de la app</div><div class="v">${APP_VERSION}</div></div>
     <div class="cell"><div class="main">Último error</div><div class="v" style="white-space:normal;font-size:13px">${DIAG.lastErr?esc(DIAG.lastErr):'Ninguno'}</div></div>
   </div></div>`;
 }
@@ -1666,7 +1662,12 @@ if (window.matchMedia) try { matchMedia('(prefers-color-scheme: dark)').addEvent
 window.addEventListener('pagehide', flushAll);
 
 boot();
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then(r => { r.update && r.update(); }).catch(()=>{}));
+  let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded) return; reloaded=true; flushAll(); setTimeout(()=>location.reload(), 300); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible') navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(()=>{}); });
+}
 })();
 </script>
 </body>
