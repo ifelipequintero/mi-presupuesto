@@ -268,6 +268,26 @@ button.stat:active{background:var(--fill)}
 .kvs{display:flex;flex-direction:column;gap:6px;background:var(--bg);border-radius:12px;padding:10px 12px}
 .kvs div{display:flex;justify-content:space-between;gap:10px}
 .kvs b{color:var(--label);font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+
+.plancard{padding:14px 14px 12px}
+.pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pcol{min-width:0}
+.pcol .l{font-size:12px;color:var(--label2)}
+.pcol .v{font-size:17px;font-weight:700;margin-top:2px}
+.pcol .pbar{margin-top:6px}
+.pcol .s{font-size:11.5px;color:var(--label2);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pstatus{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:.5px solid var(--sep)}
+.pstatus .more{display:flex;align-items:center;gap:6px;color:var(--blue);font-size:14px;white-space:nowrap}
+.pstatus .more svg{width:7px;height:12px}
+
+.swipe{position:relative;overflow:hidden}
+.swipe .sw-del{position:absolute;top:0;bottom:0;right:0;width:96px;background:var(--red);color:#fff;font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 6px;line-height:1.2}
+.swipe .sw-content{background:var(--card);transition:transform .22s ease;touch-action:pan-y;z-index:1}
+.swipe.dragging .sw-content{transition:none}
+.swipe.open .sw-content{transform:translateX(-96px)}
+.swipe + .swipe > .cell::before,.cell + .swipe > .cell::before,.swipe + .cell::before{content:"";position:absolute;top:0;left:16px;right:0;border-top:.5px solid var(--sep)}
+.toast{display:flex;align-items:center;gap:12px}
+.toast button{color:var(--blue);font-weight:700}
 </style>
 </head>
 <body>
@@ -719,7 +739,7 @@ function render(){
     ${tabBtn('goal','Inversión')}${tabBtn('more','Más')}
   </div></nav>
   ${S.sheet ? sheetHtml() : ''}
-  ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ''}`;
+  ${S.toast ? `<div class="toast" role="status">${esc(S.toast.t)}${S.toast.act?`<button data-act="${S.toast.act}">Deshacer</button>`:''}</div>` : ''}`;
 
   document.body.style.overflow = S.sheet ? 'hidden' : '';
   if (S.sheet) S.sheet.anim = false;
@@ -736,7 +756,33 @@ function render(){
 }
 function scheduleRender(){ if (pointerDown) pendingRender=true; else setTimeout(render,0); }
 let toastTimer;
-function toast(t){ S.toast=t; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ S.toast=null; const el=document.querySelector('.toast'); if (el) el.remove(); }, 2200); }
+function toast(t, act){ S.toast={t, act}; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ S.toast=null; const el=document.querySelector('.toast'); if (el) el.remove(); }, act ? 5000 : 2200); }
+/* swipe a line to the left to reveal “Eliminar” */
+let sw=null, swipeJustEnded=false;
+document.addEventListener('pointerdown', e => {
+  swipeJustEnded=false;
+  const c=e.target.closest && e.target.closest('.swipe .sw-content');
+  const del=e.target.closest && e.target.closest('.sw-del'), mine=(c||del) && (c||del).parentElement;
+  document.querySelectorAll('.swipe.open').forEach(w => { if (w!==mine) w.classList.remove('open'); });
+  if (!c) return;
+  sw={el:c, wrap:c.parentElement, x:e.clientX, y:e.clientY, base:c.parentElement.classList.contains('open')?-96:0, dx:0, active:false};
+});
+document.addEventListener('pointermove', e => {
+  if (!sw) return;
+  const dx=e.clientX-sw.x, dy=e.clientY-sw.y;
+  if (!sw.active){
+    if (Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.3){ sw.active=true; sw.wrap.classList.add('dragging'); }
+    else if (Math.abs(dy)>10){ sw=null; return; } else return;
+  }
+  sw.dx=dx; sw.el.style.transform=`translateX(${Math.min(0,Math.max(-130, sw.base+dx))}px)`;
+});
+const swEnd = () => {
+  if (!sw) return;
+  if (sw.active){ const open = sw.base+sw.dx < -48; sw.wrap.classList.remove('dragging'); sw.el.style.transform=''; sw.wrap.classList.toggle('open', open); swipeJustEnded=true; }
+  sw=null;
+};
+document.addEventListener('pointerup', swEnd);
+document.addEventListener('pointercancel', swEnd);
 
 function problemBanner(){
   if (S.mode==='local') return `<div class="sec" style="margin-top:8px"><div class="note" style="color:var(--label);border:1.5px solid var(--red)">
@@ -780,7 +826,6 @@ function viewHome(){
       <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastaste</div><div class="v fit">${money(spentA)}</div><div class="s">${nTx} gasto${nTx===1?'':'s'}</div></button>
       <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertiste</div><div class="v fit orange">${money(t.invest[1])}</div><div class="s">${t.invest[0]>0?`de ${moneyShort(t.invest[0])}`:'&nbsp;'}</div></button>
     </div>
-    ${limP>0 ? `<div class="avail"><span>${rest>=0?'En las categorías con límite te quedan':'Te pasaste de tus límites por'}</span><b class="n ${rest<0?'red':''}">${money(Math.abs(rest))}</b></div>` : ''}
   </section>
   ${fresh ? `<div class="banner">📋 Nuevo mes. Tus categorías y límites vienen de <b>${esc(monthName(m._copiedFrom))}</b>; los gastos empiezan en cero.</div>` : ''}
   ${budgetColumns(m,k)}
@@ -853,24 +898,25 @@ function groupHtml(m,k,g,t){
       else sub='Toca para anotar un gasto';
     }
     const barCol = (g.kind==='fixed'||g.kind==='variable') && rem<0 ? 'var(--red)' : col;
-    return `<button class="cell" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
+    return `<div class="swipe"><button class="sw-del" data-act="swDel" data-g="${g.kind}" data-id="${esc(it.id)}" tabindex="-1">Eliminar</button><button class="cell sw-content" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
       ${avatar(emojiOf(it,g.kind), col)}
       <div class="main">
         <div class="row1"><span class="t">${esc(it.name)}${c!==base()?`<span class="badge">${c}</span>`:''}</span><span class="v">${money(ac,c)}</span></div>
         ${pl>0 ? `<div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${barCol}"></i></div>` : ''}
         <div class="row1 s"><span class="${cls}">${sub}</span><span>${pl>0 ? `de ${money(pl,c)}` : ''}</span></div>
-      </div></button>`;
+      </div></button></div>`;
   }).join('');
   let ghost='';
   if (g.kind==='invest') ghost = accounts().filter(a => !items.some(it=>itemAcct(it)===a.id)).map(a =>
     `<button class="cell" data-act="acctTx2" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<div class="main"><div class="t">Aporte a ${esc(a.name)}</div><div class="s">Toca para registrar un aporte</div></div></button>`).join('');
   const [pl,ac]=t[g.kind];
-  const label = (g.kind==='fixed'||g.kind==='variable') ? (pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac)) : `${money(ac)} / ${money(pl)}`;
+  const label = pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac);
   const goalRow = g.kind==='invest' && accounts().length ? `<button class="cell" data-act="tab" data-v="goal">${avatar('🎯','#FF9F0A')}<div class="main"><div class="row1"><span class="t">Tu meta pide este mes</span><span class="v">${money(pl)}</span></div>
       ${pl>0?`<div class="pbar"><i style="width:${Math.min(100,ac/pl*100).toFixed(1)}%;background:var(--orange)"></i></div>`:''}
       <div class="row1 s"><span class="${ac>=pl?'green':''}">${ac>=pl ? 'Cumpliste el aporte del mes ✓' : `Te faltan ${money(pl-ac)}`}</span><span>se calcula con tu meta</span></div></div></button>` : '';
+  const hint = g.kind==='variable' && items.length ? '<div class="foot">Desliza una línea a la izquierda para eliminar lo que no uses.</div>' : '';
   return `<div class="sec"><div class="sech"><span>${GROUP_EMOJI[g.kind]} ${g.name}</span><b class="n">${label}</b></div>
-    <div class="list">${goalRow}${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>
+    <div class="list">${goalRow}${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>${hint}
 </div>`;
 }
 function goalMini(){
@@ -888,48 +934,63 @@ function reminderCard(){
     ${rules ? `<div class="card" style="white-space:pre-wrap">${esc(rules)}</div>` : `<button class="card" data-act="tab" data-v="more" style="text-align:left;width:100%;color:var(--label2)">Escribe tus reglas de gasto en <b style="color:var(--label)">Más → Mis reglas</b> (por ejemplo “Domicilios solo los viernes”) y te las recordaré aquí cada mes.</button>`}</div>`;
 }
 
-function ruleCard(m,k,t){
+/* everything the savings plan says, computed once (card on Inicio + detail sheet) */
+function planCalc(m,k,t){
   const r=activeRule(), inc=t.income[0]||t.income[1];
-  const head=`<div class="sech"><span>Tu plan de ahorro</span><b>${esc(r.name)} ${r.n}/${r.g}/${r.s}</b></div>`;
-  if (inc<=0) return `<div class="sec">${head}<button class="note" data-act="rule" style="text-align:left;width:100%">Pon en <b>Ingresos</b> cuánto esperas ganar este mes y aquí te digo cuánto puedes gastar en necesidades y gustos, y cuánto ahorrar para tu meta. <span style="color:var(--blue)">Ver planes</span></button></div>`;
+  if (inc<=0) return {r, inc};
   const bt=bucketTotals(m,k), lim={n:inc*r.n/100, g:inc*r.g/100, s:inc*r.s/100}, b=base(), trm=trmOf(k);
-  const row = key => {
-    const [pl,ac]=bt[key], L=lim[key];
-    if (key==='s'){
-      const pct=L?Math.min(100,ac/L*100):0;
-      return `<div class="cell" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${BUCKET.s}</span><span class="n" style="font-weight:600">mínimo ${money(L)}</span></div>
-        <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:var(--green)"></i></div>
-        <div class="s" style="margin-top:6px">Llevas ${money(ac)}${ac<L-0.5?` · <span class="orange">te faltan ${money(L-ac)}</span>`:' ✓'}</div></div>`;
-    }
-    const over=pl>L+0.5, pct=L?Math.min(100,ac/L*100):0, color=ac>L?'var(--red)':pct>85?'var(--orange)':'var(--blue)';
-    return `<div class="cell" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${BUCKET[key]}</span><span class="n" style="font-weight:600">hasta ${money(L)}</span></div>
-      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
-      <div class="s" style="margin-top:6px">Gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:` · te pasaste ${money(ac-L)}`}</div></div>`;
-  };
-  // tie the plan to the investment goal, looking at what you really aporta
   const G=goalStats(), needB=conv(G.need,gcur(),b,trm), pctNeed=Math.min(100,Math.ceil(needB/inc*100));
   const realB = G.paceP>0 ? conv(G.paceP,gcur(),b,trm) : null;
   const reaches = G.paceP>0 && isFinite(G.pace) && G.si+G.pace<=G.ei;
-  const undo = S.settings.rule && S.settings.rule.undo;
-  const fix = pctNeed>r.s && pctNeed<=100 ? `<div class="btnrow"><button class="btn tint small" data-act="ruleSetS" data-v="${pctNeed}">Subir mi ahorro a ${pctNeed} %</button></div>` : '';
-  const uo = undo && S.settings.rule.opts[undo.key];
-  const undoBtn = undo && uo ? `<div class="btnrow"><button class="btn tint small" data-act="ruleUndo">↩︎ Volver a ${esc(RULES[undo.key].name)} ${uo.n}/${uo.g}/${uo.s}</button></div>` : '';
-  let tie;
-  if (lim.s >= needB-0.5)
-    tie=`<b class="green">Tu plan alcanza para tu meta.</b> Tu meta pide ${money(needB)} al mes y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}.${lim.s-needB>0.5?` Lo que sobra (${money(lim.s-needB)}) puede ir a tu fondo de emergencia.`:''}`;
-  else if (reaches)
-    tie=`<b class="green">Vas bien con tu meta.</b> Tu plan de ahorro (${r.s} %) deja ${money(lim.s)}, menos de los ${money(needB)} que pide tu meta. Pero como hoy aportas ${money(realB)} al mes, sí llegas a tiempo. Para que tu plan cuadre con lo que de verdad haces, sube el ahorro a ${pctNeed} %.${fix}`;
-  else if (realB!=null)
-    tie=`<b class="orange">Así no llegas a tiempo a tu meta.</b> Tu meta pide ${money(needB)} al mes (${pctNeed} % de lo que ganas). Hoy aportas ${money(realB)} y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}. Sube tu ahorro o amplía el plazo en Inversión.${fix}`;
-  else {
+  let state, short, tie;
+  if (lim.s >= needB-0.5){ state='ok'; short='Tu plan alcanza para tu meta';
+    tie=`Tu meta pide ${money(needB)} al mes y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}.${lim.s-needB>0.5?` Lo que sobra (${money(lim.s-needB)}) puede ir a tu fondo de emergencia.`:''}`; }
+  else if (reaches){ state='ok'; short='Vas bien con tu meta';
+    tie=`Tu plan de ahorro (${r.s} %) deja ${money(lim.s)}, menos de los ${money(needB)} que pide tu meta. Pero como hoy aportas ${money(realB)} al mes, sí llegas a tiempo. Para que el plan cuadre con lo que de verdad haces, súbelo a ${pctNeed} %.`; }
+  else if (realB!=null){ state='bad'; short='Así no llegas a tiempo a tu meta';
+    tie=`Tu meta pide ${money(needB)} al mes (${pctNeed} % de lo que ganas). Hoy aportas ${money(realB)} y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}. Sube tu ahorro o amplía el plazo en Inversión.`; }
+  else { state='bad'; short='Tu plan no alcanza para tu meta';
     const n=reachAll(balancesBefore(G.si), conv(lim.s,b,gcur(),trm), goal().target);
-    tie=`<b class="orange">Tu plan no alcanza para tu meta a tiempo.</b> Tu meta pide ${money(needB)} al mes (${pctNeed} % de lo que ganas) y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}. ${isFinite(n)?`Ahorrando eso llegarías en ${fmtMonths(n).toLowerCase()}.`:''} Sube tu ahorro o amplía el plazo en Inversión.${fix}`;
-  }
-  const ef=bt.n[0]||lim.n;
-  return `<div class="sec">${head}<div class="list">
-      ${row('n')}${row('g')}${row('s')}
-      <button class="cell blue" data-act="rule"><div class="main">Cambiar o ajustar mi plan</div><span class="arrow">${IC.chev}</span></button></div>
-    <div class="note" style="margin-top:10px;font-size:14px;color:var(--label)">${tie}${undoBtn}<div class="muted" style="margin-top:8px">Fondo de emergencia recomendado: ${money(ef*3)} a ${money(ef*6)} (3 a 6 meses de necesidades). Llénalo antes de invertir más allá de tu meta.</div></div></div>`;
+    tie=`Tu meta pide ${money(needB)} al mes (${pctNeed} % de lo que ganas) y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}. ${isFinite(n)?`Ahorrando eso llegarías en ${fmtMonths(n).toLowerCase()}.`:''} Sube tu ahorro o amplía el plazo en Inversión.`; }
+  return {r, inc, bt, lim, needB, pctNeed, state, short, tie, ef:bt.n[0]||lim.n};
+}
+function ruleCard(m,k,t){
+  const P=planCalc(m,k,t), r=P.r;
+  const head=`<div class="sech"><span>🧭 Tu plan de ahorro</span><b>${esc(r.name)} ${r.n}/${r.g}/${r.s}</b></div>`;
+  if (P.inc<=0) return `<div class="sec">${head}<button class="card" data-act="rule" style="color:var(--label2)">Registra en <b style="color:var(--label)">Ingresos</b> lo que te llega y aquí te digo cuánto puedes gastar y cuánto ahorrar. <span style="color:var(--blue)">Ver planes</span></button></div>`;
+  const cols=['n','g','s'].map(key=>{
+    const ac=P.bt[key][1], L=P.lim[key], pct=L?Math.min(100,ac/L*100):0;
+    const color = key==='s' ? 'var(--green)' : ac>L ? 'var(--red)' : pct>85 ? 'var(--orange)' : 'var(--blue)';
+    return `<div class="pcol"><div class="l">${key==='n'?'Necesidades':key==='g'?'Gustos':'Ahorro'}</div><div class="v fit ${key!=='s'&&ac>L?'red':''}">${esc(moneyShort(ac))}</div>
+      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div><div class="s">${key==='s'?'mín.':'de'} ${esc(moneyShort(L))}</div></div>`;
+  }).join('');
+  return `<div class="sec">${head}<button class="card plancard" data-act="planInfo">
+      <div class="pgrid">${cols}</div>
+      <div class="pstatus"><span class="pill ${P.state==='ok'?'ok':'bad'}" style="margin:0">${esc(P.short)}</span><span class="more">Ver detalle ${IC.chev}</span></div>
+    </button></div>`;
+}
+function planSheetBody(){
+  const k=S.cur, m=getMonth(k,false), t=totals(m,k), P=planCalc(m,k,t), r=P.r;
+  if (P.inc<=0) return `<div class="card empty" style="margin-top:12px">Registra primero lo que te llega en Ingresos.</div>`;
+  const undo=S.settings.rule && S.settings.rule.undo, uo=undo && S.settings.rule.opts[undo.key];
+  const rows=['n','g','s'].map(key=>{
+    const ac=P.bt[key][1], L=P.lim[key], pct=L?Math.min(100,ac/L*100):0;
+    if (key==='s') return `<div class="cell" style="display:block"><div class="row1"><span>${BUCKET.s} (${r.s} %)</span><span class="v">mínimo ${money(L)}</span></div>
+      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:var(--green)"></i></div><div class="s" style="margin-top:6px">Llevas ${money(ac)}${ac<L-0.5?` · te faltan ${money(L-ac)}`:' ✓'}</div></div>`;
+    const color=ac>L?'var(--red)':pct>85?'var(--orange)':'var(--blue)';
+    return `<div class="cell" style="display:block"><div class="row1"><span>${BUCKET[key]} (${key==='n'?r.n:r.g} %)</span><span class="v">hasta ${money(L)}</span></div>
+      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div><div class="s" style="margin-top:6px">Gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:` · te pasaste ${money(ac-L)}`}</div></div>`;
+  }).join('');
+  return `
+    <div class="sec" style="margin-top:8px"><div class="card"><span class="pill ${P.state==='ok'?'ok':'bad'}" style="margin:0">${esc(P.short)}</span>
+      <div style="margin-top:10px;line-height:1.45">${P.tie}</div>
+      ${P.pctNeed>r.s && P.pctNeed<=100 ? `<div class="btnrow"><button class="btn small" data-act="ruleSetS" data-v="${P.pctNeed}">Subir mi ahorro a ${P.pctNeed} %</button></div>` : ''}
+      ${undo && uo ? `<div class="btnrow"><button class="btn tint small" data-act="ruleUndo">↩︎ Volver a ${esc(RULES[undo.key].name)} ${uo.n}/${uo.g}/${uo.s}</button></div>` : ''}
+    </div></div>
+    <div class="sec"><div class="sech"><span>Este mes con ${esc(r.name)} ${r.n}/${r.g}/${r.s}</span></div><div class="list">${rows}</div>
+      <div class="foot">Los porcentajes salen de lo que ganas este mes (${money(P.inc)}).</div></div>
+    <div class="sec"><div class="list"><div class="cell">${avatar('🛟','#64D2FF','sm')}<div class="main">Fondo de emergencia recomendado<div class="s">3 a 6 meses de necesidades. Llénalo antes de invertir más allá de tu meta.</div></div><div class="v">${moneyShort(P.ef*3)}–${moneyShort(P.ef*6)}</div></div></div></div>
+    <div class="sec" style="margin-top:18px"><button class="btn tint" data-act="rule">Cambiar o ajustar mi plan</button></div>`;
 }
 
 /* ---------- movements ---------- */
@@ -1326,6 +1387,9 @@ function sheetHtml(){
       </div>${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
       <div class="foot"><b>Necesidades:</b> lo que pagas sí o sí (arriendo, servicios, mercado, transporte, cuotas de deudas). <b>Gustos:</b> lo que podrías recortar (restaurantes, salidas, ropa, suscripciones). <b>Ahorro:</b> fondo de emergencia e inversión. Para cambiar el tipo de una categoría, tócala en Inicio.</div></div>
       <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">Usar este plan</button></div>`;
+  } else if (sh.type==='plan'){
+    title='Tu plan de ahorro'; right='';
+    body = planSheetBody();
   } else if (sh.type==='trm'){
     title = 'TRM del mes';
     body = `<div class="sec" style="margin-top:10px"><div class="list">
@@ -1486,6 +1550,9 @@ document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 
 document.addEventListener('click', e => {
+  if (swipeJustEnded){ swipeJustEnded=false; return; }
+  const openRow = e.target.closest('.swipe.open');
+  if (openRow && !e.target.closest('.sw-del')){ openRow.classList.remove('open'); return; }
   const b=e.target.closest('[data-act]');
   if (!b || b.tagName==='INPUT' || b.tagName==='SELECT' || b.tagName==='TEXTAREA') return;
   const a=b.dataset.act;
@@ -1507,6 +1574,13 @@ document.addEventListener('click', e => {
     case 'addAcctLine': { const m=getMonth(S.cur,true), it=ensureAcctItem(m,b.dataset.v); saveMonth(S.cur); openItem('invest', it.id); break; }
     case 'acct': openAcct(b.dataset.id); break;
     case 'newAcct': S.sheet=null; openAcct(null); break;
+    case 'swDel': { const m=getMonth(S.cur,true), g=b.dataset.g, id=b.dataset.id, list=m.groups[g]||[], idx=list.findIndex(i=>i.id===id); if (idx<0) break;
+      const txs=m.tx.filter(t=>t.itemId===id);
+      if (txs.length && b.dataset.sure!=='1'){ b.dataset.sure='1'; b.textContent=`¿Borrar ${txs.length} mov.?`; return; }
+      const item=list[idx]; list.splice(idx,1); m.tx=m.tx.filter(t=>t.itemId!==id); saveMonth(S.cur);
+      S._undo={k:S.cur, g, idx, item, txs}; toast(`${item.name} eliminado`, 'undoDel'); break; }
+    case 'undoDel': { const u=S._undo; if (!u) break; const m=getMonth(u.k,true); m.groups[u.g].splice(Math.min(u.idx,m.groups[u.g].length),0,u.item); m.tx.push(...u.txs); saveMonth(u.k); S._undo=null; toast('Restaurado'); break; }
+    case 'planInfo': S.sheet={type:'plan', anim:true, draft:{}}; break;
     case 'ruleUndo': { const r=S.settings.rule; if (r.undo){ r.active = RULES[r.undo.key] ? r.undo.key : 'balanced'; delete r.undo; saveSettings(); toast(`Volviste a ${RULES[r.active].name}`); } break; }
     case 'ruleSetS': { const r=S.settings.rule, cur=activeRule(), ns=Number(b.dataset.v);
       // the recommended plans stay untouched: the raise lives in "Personalizado", and you can go back
