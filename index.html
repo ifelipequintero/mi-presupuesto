@@ -279,9 +279,9 @@ button.stat:active{background:var(--fill)}
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
+  {kind:'invest',  name:'Inversión',        act:'Aportado', color:'var(--orange)'},
   {kind:'fixed',   name:'Gastos fijos',     act:'Gastado',  color:'var(--blue)'},
-  {kind:'variable',name:'Gastos variables', act:'Gastado',  color:'var(--blue)'},
-  {kind:'invest',  name:'Inversión',        act:'Aportado', color:'var(--orange)'}
+  {kind:'variable',name:'Gastos variables', act:'Gastado',  color:'var(--blue)'}
 ];
 const GNAME = Object.fromEntries(GROUPS.map(g=>[g.kind,g.name]));
 const TEMPLATE = {
@@ -399,10 +399,17 @@ function actualOf(m, it, trm){ let s=0; for (const t of m.tx) if (t.itemId===it.
 function totals(m, k){
   const trm = trmOf(k), b = base(), t = {income:[0,0], fixed:[0,0], variable:[0,0], invest:[0,0]};
   for (const g of GROUPS) for (const it of (m.groups[g.kind]||[])) {
-    t[g.kind][0] += conv(it.planned, itemCur(it), b, trm);
+    if (g.kind!=='invest') t[g.kind][0] += conv(it.planned, itemCur(it), b, trm);
     t[g.kind][1] += conv(actualOf(m,it,trm), itemCur(it), b, trm);
   }
+  t.invest[0] = needFor(k);
   return t;
+}
+/* the aporte your goal asks for in month k (same as “Debes aportar” in Inversión), in your main currency */
+function needFor(k){
+  if (!accounts().length) return 0;
+  const i=Math.max(idxOf(k), startIdx());
+  return conv(pmtAll(balancesBefore(i), goal().target, Math.max(0,endIdx()-i)), gcur(), base(), trmOf(k));
 }
 const NEED_RE = /arriendo|hipoteca|servicio|internet|celular|transporte|salud|seguro|deuda|tarjeta|mercado|imprevist|cr[eé]dito|educaci|colegio|universidad/i;
 const SAVE_RE = /fondo|ahorro|emergencia|inversi|pensi[oó]n/i;
@@ -466,8 +473,7 @@ function contribRate(){
   if (_rc!=null) return _rc;
   const ac=goalAccounts(); if (!ac.length) return (_rc=0);
   const m=getMonth(S.cur,false), trm=trmOf(S.cur);
-  let w=ac.map(a=>(m.groups.invest||[]).filter(it=>itemAcct(it)===a.id).reduce((s,it)=>s+conv(it.planned,itemCur(it),gcur(),trm),0));
-  if (!(sum(w)>0)) w=balancesAt(Math.max(idxOf(S.cur),startIdx()));
+  let w=balancesAt(Math.max(idxOf(S.cur),startIdx()));
   if (!(sum(w)>0)) w=ac.map((a,i)=>i===0?1:0);
   return (_rc = ac.reduce((s,a,i)=>s+acctRate(a)*(w[i]||0),0)/sum(w));
 }
@@ -821,7 +827,7 @@ function donutCard(spend, total){
 function groupHtml(m,k,g,t){
   const trm=trmOf(k), items=m.groups[g.kind]||[];
   const rows = items.map(it => {
-    const c=itemCur(it), ac=actualOf(m,it,trm), pl=Number(it.planned)||0, rem=pl-ac;
+    const c=itemCur(it), ac=actualOf(m,it,trm), pl=g.kind==='invest' ? 0 : Number(it.planned)||0, rem=pl-ac;
     const pct = pl ? Math.min(100, ac/pl*100) : (ac?100:0), col=colorOf(it,g.kind);
     let sub, cls='';
     if (g.kind==='income' || g.kind==='invest'){
@@ -853,8 +859,11 @@ function groupHtml(m,k,g,t){
     `<button class="cell" data-act="acctTx2" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<div class="main"><div class="t">Aporte a ${esc(a.name)}</div><div class="s">Toca para registrar un aporte</div></div></button>`).join('');
   const [pl,ac]=t[g.kind];
   const label = (g.kind==='fixed'||g.kind==='variable') ? (pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac)) : `${money(ac)} / ${money(pl)}`;
+  const goalRow = g.kind==='invest' && accounts().length ? `<button class="cell" data-act="tab" data-v="goal">${avatar('🎯','#FF9F0A')}<div class="main"><div class="row1"><span class="t">Tu meta pide este mes</span><span class="v">${money(pl)}</span></div>
+      ${pl>0?`<div class="pbar"><i style="width:${Math.min(100,ac/pl*100).toFixed(1)}%;background:var(--orange)"></i></div>`:''}
+      <div class="row1 s"><span class="${ac>=pl?'green':''}">${ac>=pl ? 'Cumpliste el aporte del mes ✓' : `Te faltan ${money(pl-ac)}`}</span><span>se calcula con tu meta</span></div></div></button>` : '';
   return `<div class="sec"><div class="sech"><span>${GROUP_EMOJI[g.kind]} ${g.name}</span><b class="n">${label}</b></div>
-    <div class="list">${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>
+    <div class="list">${goalRow}${rows}${ghost}<button class="cell blue" data-act="${g.kind==='invest'?'goalTx':'newItem'}" data-g="${g.kind}">${plusIc}<span>${g.kind==='income'?'Nueva fuente de ingreso':g.kind==='invest'?'Registrar un aporte':'Añadir gasto'}</span></button></div>
 </div>`;
 }
 function goalMini(){
@@ -894,7 +903,9 @@ function ruleCard(m,k,t){
   const G=goalStats(), needB=conv(G.need,gcur(),b,trm), pctNeed=Math.min(100,Math.ceil(needB/inc*100));
   const realB = G.paceP>0 ? conv(G.paceP,gcur(),b,trm) : null;
   const reaches = G.paceP>0 && isFinite(G.pace) && G.si+G.pace<=G.ei;
+  const undo = S.settings.rule && S.settings.rule.undo;
   const fix = pctNeed>r.s && pctNeed<=100 ? `<div class="btnrow"><button class="btn tint small" data-act="ruleSetS" data-v="${pctNeed}">Subir mi ahorro a ${pctNeed} %</button></div>` : '';
+  const undoBtn = undo ? `<div class="btnrow"><button class="btn tint small" data-act="ruleUndo">↩︎ Volver a ${undo.o.n}/${undo.o.g}/${undo.o.s}</button></div>` : '';
   let tie;
   if (lim.s >= needB-0.5)
     tie=`<b class="green">Tu plan alcanza para tu meta.</b> Tu meta pide ${money(needB)} al mes y tu plan de ahorro (${r.s} %) deja ${money(lim.s)}.${lim.s-needB>0.5?` Lo que sobra (${money(lim.s-needB)}) puede ir a tu fondo de emergencia.`:''}`;
@@ -910,7 +921,7 @@ function ruleCard(m,k,t){
   return `<div class="sec">${head}<div class="list">
       ${row('n')}${row('g')}${row('s')}
       <button class="cell blue" data-act="rule"><div class="main">Cambiar o ajustar mi plan</div><span class="arrow">${IC.chev}</span></button></div>
-    <div class="note" style="margin-top:10px;font-size:14px;color:var(--label)">${tie}<div class="muted" style="margin-top:8px">Fondo de emergencia recomendado: ${money(ef*3)} a ${money(ef*6)} (3 a 6 meses de necesidades). Llénalo antes de invertir más allá de tu meta.</div></div></div>`;
+    <div class="note" style="margin-top:10px;font-size:14px;color:var(--label)">${tie}${undoBtn}<div class="muted" style="margin-top:8px">Fondo de emergencia recomendado: ${money(ef*3)} a ${money(ef*6)} (3 a 6 meses de necesidades). Llénalo antes de invertir más allá de tu meta.</div></div></div>`;
 }
 
 /* ---------- movements ---------- */
@@ -1193,7 +1204,7 @@ function itemWords(g, existing){
     foot:'Lo que escribas se registra como plata que te llegó hoy.', planFoot:'Si pones cuánto esperas, te muestro cuánto te falta por recibir.'};
   if (g==='invest') return {title:'Nueva línea de aporte', namePh:'Ej. Aporte a Bolsa', noun:'línea de aporte', ask: existing ? 'Registrar un aporte' : '¿Cuánto invertiste?', btn:'Registrar aporte', done:'Aporte registrado 📈',
     plan:'Planeo aportar al mes', planPh:'Opcional', same:'Aporté lo mismo que el mes pasado', list:'Aportado en', other:'Registrar un aporte de otro día',
-    foot:'Lo que escribas se registra como aporte de hoy y suma a la cuenta y a tu meta.', planFoot:'Si pones cuánto planeas aportar, te muestro cuánto te falta este mes.'};
+    foot:'Lo que escribas se registra como aporte de hoy y suma a la cuenta y a tu meta.', planFoot:'Cuánto debes aportar cada mes se calcula solo con tu meta (pestaña Inversión).'};
   return {title:'Nuevo gasto', namePh:'Ej. Gimnasio', noun:'gasto', ask: existing ? 'Anotar un gasto' : '¿Cuánto gastaste?', btn:'Guardar gasto', done:'Gasto anotado ✓',
     plan:'Límite al mes', planPh:'Sin límite', same:'Pagué lo mismo que el mes pasado', list:'Gastado en', other:'Anotar un gasto de otro día',
     foot:'Lo que escribas se anota como gasto de hoy.', planFoot:'Si le pones un límite, te aviso cuánto te queda y cuándo te pasas.'};
@@ -1257,7 +1268,7 @@ function sheetHtml(){
         ${it ? nameCell : ''}
         <div class="cell"><span>Divisa</span><span style="flex:1"></span>${seg('draft','cur',d.cur)}</div>
         ${sh.g==='invest' && ac.length>1 ? `<div class="cell"><span>Cuenta</span><span style="flex:1"></span>${seg('draft','acct',d.acct,ac.map(a=>a.id),false,Object.fromEntries(ac.map(a=>[a.id,esc(a.name)])))}</div>` : ''}
-        <div class="cell"><label for="s-planned">${W.plan}</label><input id="s-planned" inputmode="decimal" placeholder="${W.planPh}" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>
+        ${sh.g!=='invest' ? `<div class="cell"><label for="s-planned">${W.plan}</label><input id="s-planned" inputmode="decimal" placeholder="${W.planPh}" value="${esc(d.planned)}" data-draft="planned" autocomplete="off"><span class="muted">${d.cur}</span></div>` : ''}
         ${isExp ? `<div class="cell"><span>Tipo</span><span style="flex:1"></span>${seg('draft','bucket',d.bucket,['n','g','s'],false,{n:'Necesidad',g:'Gusto',s:'Ahorro'})}</div>` : ''}
       </div><div class="foot">${W.planFoot}${isExp ? ' '+(d.bucket==='n' ? 'Necesidad: lo que tienes que pagar sí o sí.' : d.bucket==='g' ? 'Gusto: lo que podrías recortar si hace falta.' : 'Ahorro: fondo de emergencia u otro ahorro.') : ''}</div></div>
       <div class="sec" style="margin-top:20px"><button class="btn" data-act="sheetSave">${itemBtnLabel(sh, d.spend)}</button>
@@ -1487,7 +1498,8 @@ document.addEventListener('click', e => {
     case 'addAcctLine': { const m=getMonth(S.cur,true), it=ensureAcctItem(m,b.dataset.v); saveMonth(S.cur); openItem('invest', it.id); break; }
     case 'acct': openAcct(b.dataset.id); break;
     case 'newAcct': S.sheet=null; openAcct(null); break;
-    case 'ruleSetS': { const r=S.settings.rule, o=r.opts[r.active], ns=Number(b.dataset.v); let extra=ns-o.s;
+    case 'ruleUndo': { const r=S.settings.rule; if (r.undo){ r.opts[r.undo.key]={...r.undo.o}; r.active=r.undo.key; delete r.undo; saveSettings(); toast('Plan de ahorro como estaba'); } break; }
+    case 'ruleSetS': { const r=S.settings.rule, o=r.opts[r.active], ns=Number(b.dataset.v); r.undo={key:r.active, o:{...o}}; let extra=ns-o.s;
       const fromG=Math.min(o.g,extra); o.g-=fromG; extra-=fromG; o.n=Math.max(0,o.n-extra); o.s=ns; saveSettings(); toast(`Ahorro subido a ${ns} %`); break; }
     case 'acctTx2': openTx(null,{kind:'inv', acct:b.dataset.v}); break;
     case 'acctTx': { const id=S.sheet.id; S.sheet=null; openTx(null,{kind:'inv', acct:id}); break; }
