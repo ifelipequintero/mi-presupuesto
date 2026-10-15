@@ -295,7 +295,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '18';
+const APP_VERSION = '19';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
@@ -674,6 +674,18 @@ function colorOf(it, kind){
   if (kind==='invest'){ const a=acctById(itemAcct(it)); if (a) return acctColor(a); }
   return kind==='income' ? 'var(--green)' : 'var(--spend)';
 }
+/* each icon has its own soft color that matches what it is; red is never used here (it means "exceso") */
+const ICON_COLORS = ['#FF9F0A','#FF6482','#30B0C7','#34C759','#5E5CE6','#AF52DE','#FFCC00','#64D2FF','#A2845E','#00C7BE','#007AFF'];
+const EMOJI_COLOR = {'💼':'#34C759','💸':'#00C7BE','💰':'#34C759','🏠':'#FF9F0A','💡':'#FFCC00','📱':'#5E5CE6','🚌':'#007AFF','⛽':'#A2845E',
+  '🩺':'#FF6482','💳':'#AF52DE','🛟':'#30B0C7','🛒':'#34C759','🍔':'#FF9F0A','☕':'#A2845E','🍷':'#AF52DE','🎬':'#5E5CE6','🎮':'#007AFF',
+  '👕':'#64D2FF','💇':'#FF6482','⚡':'#FFCC00','🏋️':'#30B0C7','📺':'#AF52DE','🐶':'#A2845E','📚':'#007AFF','✈️':'#64D2FF','🎁':'#FF6482',
+  '📈':'#5856D6','💜':'#AF52DE','🏦':'#30B0C7','🐷':'#FF6482','🪙':'#FFCC00','💵':'#34C759','🚗':'#007AFF','🏍️':'#A2845E','👶':'#FF6482',
+  '💊':'#00C7BE','🛠️':'#A2845E','🌱':'#34C759','🎵':'#AF52DE','📦':'#FF9F0A','🧾':'#64D2FF','🧴':'#00C7BE','📌':'#FF9F0A','🛍️':'#FF6482'};
+function iconColor(it, kind){
+  if (it.color) return it.color;
+  if (kind==='invest'){ const a=acctById(itemAcct(it)); if (a) return acctColor(a); }
+  return EMOJI_COLOR[emojiOf(it,kind)] || ICON_COLORS[hashStr((it.name||'').toLowerCase().trim())%ICON_COLORS.length];
+}
 const tint = c => `color-mix(in srgb, ${c} 20%, transparent)`;
 const avatar = (e, c, cls='') => `<span class="avatar ${cls}" style="background:${tint(c)}" aria-hidden="true">${esc(e)}</span>`;
 function moneyBig(n, c){
@@ -839,7 +851,7 @@ function budgetColumns(m,k){
     return `<button class="colb" data-act="filterCat" data-v="${esc(c.it.id)}" aria-label="${esc(c.it.name)}: ${money(c.ac)} de ${money(c.pl)}">
       <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '&nbsp;'}</span>
       <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':c.pl>0&&c.ac>c.pl*0.85?'var(--orange)':'var(--spend)'}"></span></span>
-      ${avatar(emojiOf(c.it,c.kind), col, 'sm')}
+      ${avatar(emojiOf(c.it,c.kind), iconColor(c.it,c.kind), 'sm')}
       <span class="amt">${esc(moneyShort(c.ac))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(c.pl))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
     <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--spend)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
 }
@@ -881,7 +893,7 @@ function groupHtml(m,k,g,t){
     }
     const barCol = (g.kind==='fixed'||g.kind==='variable') ? (rem<0 ? 'var(--red)' : pct>85 ? 'var(--orange)' : 'var(--spend)') : col;
     return `<button class="cell" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
-      ${avatar(emojiOf(it,g.kind), col)}
+      ${avatar(emojiOf(it,g.kind), iconColor(it,g.kind))}
       <div class="main">
         <div class="row1"><span class="t">${esc(it.name)}${c!==base()?`<span class="badge">${c}</span>`:''}</span><span class="v">${money(ac,c)}</span></div>
         ${pl>0 ? `<div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${barCol}"></i></div>` : ''}
@@ -892,7 +904,7 @@ function groupHtml(m,k,g,t){
   if (g.kind==='invest') ghost = accounts().filter(a => !items.some(it=>itemAcct(it)===a.id)).map(a =>
     `<button class="cell" data-act="acctTx2" data-v="${esc(a.id)}">${avatar(a.emoji, acctColor(a))}<div class="main"><div class="t">Aporte a ${esc(a.name)}</div><div class="s">Toca para registrar un aporte</div></div></button>`).join('');
   const [pl,ac]=t[g.kind];
-  const label = pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac);
+  const label = (g.kind==='fixed'||g.kind==='variable') ? money(ac) : pl>0 ? `${money(ac)} / ${money(pl)}` : money(ac);
   // progress toward this month's aporte, shown in the currency you pick (COP or USD); not a link
   let goalRow='';
   if (g.kind==='invest' && accounts().length){
@@ -1019,7 +1031,7 @@ function viewTx(){
   const txRow = x => {
     const fi=findItem(m,x.itemId), it=fi&&fi.it, kd=fi?fi.kind:'variable', c=x.cur||(it?itemCur(it):'COP');
     const sign = kd==='income' ? '+' : '−', cls = kd==='income' ? 'green' : kd==='invest' ? 'inv' : '';
-    return `<button class="cell" data-act="editTx" data-id="${esc(x.id)}">${avatar(it?emojiOf(it,kd):'❔', it?colorOf(it,kd):'#8E8E93')}
+    return `<button class="cell" data-act="editTx" data-id="${esc(x.id)}">${avatar(it?emojiOf(it,kd):'❔', it?iconColor(it,kd):'#8E8E93')}
       <div class="main"><div class="t">${it?esc(it.name):'Sin categoría'}</div><div class="s t">${esc(x.note || GNAME[kd] || '')}</div></div>
       <div class="v ${cls}" style="font-weight:600">${sign} ${money(x.amount,c)}${c!==b?`<small>≈ ${money(conv(x.amount,c,b,trm))}</small>`:''}</div></button>`;
   };
@@ -1288,7 +1300,7 @@ function sheetHtml(){
       + `<button class="cchip" data-act="newAcct">${avatar('＋','#8E8E93','sm')}<span class="cl">Nueva cuenta</span></button>`;
     else {
       const gs = d.kind==='ingreso' ? ['income'] : ['fixed','variable'];
-      chips = gs.flatMap(g=>(m.groups[g]||[]).map(it=>`<button class="cchip ${d.itemId===it.id?'on':''}" data-act="pickCat" data-v="${esc(it.id)}">${avatar(emojiOf(it,g),colorOf(it,g),'sm')}<span class="cl">${esc(it.name)}</span></button>`)).join('')
+      chips = gs.flatMap(g=>(m.groups[g]||[]).map(it=>`<button class="cchip ${d.itemId===it.id?'on':''}" data-act="pickCat" data-v="${esc(it.id)}">${avatar(emojiOf(it,g),iconColor(it,g),'sm')}<span class="cl">${esc(it.name)}</span></button>`)).join('')
         + `<button class="cchip" data-act="newItem" data-g="${d.kind==='ingreso'?'income':'variable'}">${avatar('＋','#8E8E93','sm')}<span class="cl">Nueva</span></button>`;
     }
     const keys=['1','2','3','4','5','6','7','8','9', d.cur==='COP'?'000':',', '0', 'back'];
@@ -1313,7 +1325,7 @@ function sheetHtml(){
     const W = itemWords(sh.g, !!it), isExp = sh.g==='fixed' || sh.g==='variable';
     title = it ? it.name : W.title;
     const txs = it ? m.tx.filter(x=>x.itemId===it.id).sort((a,b)=>(b.date||'').localeCompare(a.date||'')) : [];
-    const col = it ? colorOf(it,sh.g) : COLORS[hashStr(d.name||'x')%COLORS.length];
+    const col = it && !d.emoji ? iconColor(it,sh.g) : (EMOJI_COLOR[d.emoji || emojiOf({name:d.name, acct:d.acct}, sh.g)] || ICON_COLORS[hashStr((d.name||'x').toLowerCase().trim())%ICON_COLORS.length]);
     const ac = accounts(), last = it ? lastMonthSpent(S.cur,it) : 0;
     const rest = it ? (Number(it.planned)||0)-actualOf(m,it,trm) : 0;
     const nameCell = `<div class="cell"><label for="s-name">Nombre</label><input id="s-name" value="${esc(d.name)}" placeholder="${W.namePh}" data-draft="name" autocomplete="off"></div>`;
