@@ -19,6 +19,7 @@
   --bg:#F2F2F7; --card:#FFFFFF; --card2:#F2F2F7; --sep:rgba(60,60,67,.16);
   --label:#000000; --label2:rgba(60,60,67,.62); --label3:rgba(60,60,67,.32); --fill:rgba(118,118,128,.14);
   --blue:#007AFF; --green:#34C759; --red:#FF3B30; --orange:#FF9500; --on:#FFFFFF;
+  --inv:#5856D6; --spend:#8E8E93;
   --bar:rgba(249,249,249,.86); --shade:rgba(0,0,0,.32);
   --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
 }
@@ -26,11 +27,13 @@
   --bg:#000000; --card:#1C1C1E; --card2:#2C2C2E; --sep:rgba(84,84,88,.55);
   --label:#FFFFFF; --label2:rgba(235,235,245,.62); --label3:rgba(235,235,245,.3); --fill:rgba(118,118,128,.28);
   --blue:#0A84FF; --green:#30D158; --red:#FF453A; --orange:#FF9F0A; --on:#FFFFFF;
+  --inv:#7D7AFF; --spend:#98989D;
   --bar:rgba(22,22,24,.86); --shade:rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#000000; --card:#1C1C1E; --card2:#2C2C2E; --sep:rgba(84,84,88,.55);
   --label:#FFFFFF; --label2:rgba(235,235,245,.62); --label3:rgba(235,235,245,.3); --fill:rgba(118,118,128,.28);
   --blue:#0A84FF; --green:#30D158; --red:#FF453A; --orange:#FF9F0A; --on:#FFFFFF;
+  --inv:#7D7AFF; --spend:#98989D;
   --bar:rgba(22,22,24,.86); --shade:rgba(0,0,0,.55); color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0}
@@ -78,7 +81,7 @@ button.cell:active,.cell.tap:active{background:var(--fill)}
 .pbar{height:4px;border-radius:2px;background:var(--fill);margin-top:7px;overflow:hidden}
 .pbar i{display:block;height:100%;border-radius:2px}
 .badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;background:var(--fill);color:var(--label2);vertical-align:2px;margin-left:6px}
-.red{color:var(--red)} .green{color:var(--green)} .orange{color:var(--orange)} .muted{color:var(--label2)}
+.red{color:var(--red)} .green{color:var(--green)} .orange{color:var(--orange)} .inv{color:var(--inv)} .muted{color:var(--label2)}
 
 /* summary card */
 .sum{background:var(--card);border-radius:16px;padding:18px 16px 14px;margin-top:8px}
@@ -115,7 +118,7 @@ button.cell:active,.cell.tap:active{background:var(--fill)}
 .ring{display:flex;align-items:center;gap:16px}
 .ring svg{width:92px;height:92px;flex:none}
 .meter{height:8px;background:var(--fill);border-radius:4px;position:relative;margin-top:14px}
-.meter i{position:absolute;inset:0 auto 0 0;border-radius:4px;background:var(--orange)}
+.meter i{position:absolute;inset:0 auto 0 0;border-radius:4px;background:var(--inv)}
 .meter b{position:absolute;top:-4px;bottom:-4px;width:2px;border-radius:1px;background:var(--label);opacity:.55}
 .chart{background:var(--card);border-radius:12px;padding:12px 8px 8px}
 .chart svg{display:block;width:100%;height:auto}
@@ -209,12 +212,12 @@ button.stat:active{background:var(--fill)}
 .distleg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--label2);margin-top:8px}
 .distleg .dot{margin-right:5px}
 .plusslot{display:grid;place-items:center}
-.plus{width:54px;height:54px;border-radius:27px;background:var(--blue);color:var(--on);display:grid;place-items:center;margin-top:-16px;box-shadow:0 6px 16px color-mix(in srgb,var(--blue) 40%,transparent)}
-.plus svg{width:24px;height:24px}
-.plus:active{transform:scale(.94)}
+.tabbar .plus{width:48px;height:48px;padding:0;border-radius:50%;background:var(--blue);color:var(--on);display:grid;place-items:center;margin:4px auto;box-shadow:0 3px 10px color-mix(in srgb,var(--blue) 35%,transparent)}
+.tabbar .plus svg{width:22px;height:22px}
+.tabbar .plus:active{transform:scale(.94)}
 .amountrow{display:flex;align-items:center;justify-content:center;gap:10px;padding:14px 0 4px;min-width:0}
 .amtbig{font-size:44px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;text-align:center;min-width:0}
-.amtbig.ingreso{color:var(--green)} .amtbig.inv{color:var(--orange)}
+.amtbig.ingreso{color:var(--green)} .amtbig.inv{color:var(--inv)}
 .curchip{font-size:13px;font-weight:700;padding:6px 9px;border-radius:8px;background:var(--fill);color:var(--label2);flex:none}
 .chipgrid.hscroll{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,auto);grid-auto-columns:78px;gap:8px;margin-top:10px;padding:2px}
 .cchip{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 4px;border-radius:14px;background:var(--card);font-size:11.5px;line-height:1.15;border:2px solid transparent;scroll-snap-align:start}
@@ -283,6 +286,7 @@ button.stat:active{background:var(--fill)}
 .toast{display:flex;align-items:center;gap:12px}
 .toast button{color:var(--blue);font-weight:700}
 .goalbar .seg button{padding:3px 10px;font-size:13px}
+.cdot{width:14px;height:14px;border-radius:50%;flex:none}
 </style>
 </head>
 <body>
@@ -291,11 +295,11 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '16';
+const APP_VERSION = '17';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
-  {kind:'invest',  name:'Inversión',        act:'Aportado', color:'var(--orange)'},
+  {kind:'invest',  name:'Inversión',        act:'Aportado', color:'var(--inv)'},
   {kind:'fixed',   name:'Gastos fijos',     act:'Gastado',  color:'var(--blue)'},
   {kind:'variable',name:'Gastos variables', act:'Gastado',  color:'var(--blue)'}
 ];
@@ -449,7 +453,7 @@ const usesUSD = m => itemsOf(m).some(i=>itemCur(i)!==base()) || m.tx.some(t=>t.c
 
 /* ================= goal math (EA -> monthly compounding) ================= */
 const goal = () => S.settings.goal;
-const ACOLORS = ['#0A84FF','#BF5AF2','#30D158','#FF9F0A','#FF375F','#64D2FF','#5E5CE6'];
+const ACOLORS = ['#5856D6','#AF52DE','#7D7AFF','#3634A3','#BF5AF2','#8E8CE8'];
 const accounts = () => goal().accounts || [];
 const goalAccounts = () => accounts();
 const acctById = id => accounts().find(a=>a.id===id);
@@ -668,7 +672,7 @@ function emojiOf(it, kind){
 function colorOf(it, kind){
   if (it.color) return it.color;
   if (kind==='invest'){ const a=acctById(itemAcct(it)); if (a) return acctColor(a); }
-  return COLORS[hashStr((it.name||'').toLowerCase().trim())%COLORS.length];
+  return kind==='income' ? 'var(--green)' : 'var(--spend)';
 }
 const tint = c => `color-mix(in srgb, ${c} 20%, transparent)`;
 const avatar = (e, c, cls='') => `<span class="avatar ${cls}" style="background:${tint(c)}" aria-hidden="true">${esc(e)}</span>`;
@@ -784,18 +788,25 @@ function viewHome(){
   // the bar is your income: each color is a category, orange is what you invested, grey is what is left
   const segBase=Math.max(t.income[1], spentA+t.invest[1])||1;
   const perDay = daysLeft>0 && avail>0 ? avail/daysLeft : 0;
+  // color psychology: green = healthy margin, amber = getting tight, red = spending more than what came in
+  const share = t.income[1]>0 ? avail/t.income[1] : null;
+  const health = share==null ? {cls:'', msg:''}
+    : share<0 ? {cls:'red', msg:'⚠️ Gastaste e invertiste más de lo que te llegó.'}
+    : share<0.1 ? {cls:'orange', msg:`Cuidado: te queda menos del 10 % de lo que te llegó.`}
+    : {cls:'green', msg:`Vas bien: te queda el ${Math.round(share*100)} % de lo que te llegó.`};
   const fresh=!S.months[k] && m._copiedFrom;
   const showTrm = usesUSD(m) || b==='USD';
   return `
   <section class="hero">
     <div class="eyebrow">${avail>=0 ? 'Te queda este mes' : 'Gastaste más de lo que te llegó'}</div>
-    <div class="big fit ${avail<0?'red':''}">${moneyBig(Math.abs(avail))}</div>
-    <div class="s">${t.income[1]>0 ? `De ${money(t.income[1])} que te llegaron${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}${pending>0?`<br>Aún esperas ${money(pending)} más.`:''}</div>
-    ${t.income[1]>0 || spentA>0 ? `<div class="segbar" aria-hidden="true">${spend.map(o=>`<i style="width:${(o.ac/segBase*100).toFixed(2)}%;background:${colorOf(o.it,o.kind)}"></i>`).join('')}${t.invest[1]>0?`<i style="width:${(t.invest[1]/segBase*100).toFixed(2)}%;background:var(--orange)"></i>`:''}</div>` : ''}
+    <div class="big fit ${health.cls}">${moneyBig(Math.abs(avail))}</div>
+    <div class="s">${t.income[1]>0 ? `De ${money(t.income[1])} que te llegaron${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}${pending>0?`<br>Aún esperas ${money(pending)} más.`:''}${health.msg?`<br><span class="${health.cls}" style="font-weight:600">${health.msg}</span>`:''}</div>
+    ${t.income[1]>0 || spentA>0 ? `<div class="segbar" aria-hidden="true"><i style="width:${(spentA/segBase*100).toFixed(2)}%;background:var(--spend)"></i><i style="width:${(t.invest[1]/segBase*100).toFixed(2)}%;background:var(--inv)"></i><i style="width:${(Math.max(0,avail)/segBase*100).toFixed(2)}%;background:var(--green)"></i></div>
+      <div class="distleg"><span><span class="dot" style="background:var(--spend)"></span>Gastos</span><span><span class="dot" style="background:var(--inv)"></span>Inversión</span><span><span class="dot" style="background:var(--green)"></span>Te queda</span></div>` : ''}
     <div class="stats">
       <button class="stat" data-act="seeTx" data-v="ingreso"><div class="l">💰 Te llegó</div><div class="v fit green">${money(t.income[1])}</div><div class="s">${t.income[0]>0?`de ${moneyShort(t.income[0])}`:'&nbsp;'}</div></button>
-      <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastaste</div><div class="v fit">${money(spentA)}</div><div class="s">${nTx} gasto${nTx===1?'':'s'}</div></button>
-      <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertiste</div><div class="v fit orange">${money(t.invest[1])}</div><div class="s">${t.invest[0]>0?`de ${moneyShort(t.invest[0])}`:'&nbsp;'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastaste</div><div class="v fit ${t.income[1]>0 && spentA>t.income[1] ? 'red' : ''}">${money(spentA)}</div><div class="s">${nTx} gasto${nTx===1?'':'s'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertiste</div><div class="v fit inv">${money(t.invest[1])}</div><div class="s">${t.invest[0]>0?`de ${moneyShort(t.invest[0])}`:'&nbsp;'}</div></button>
     </div>
   </section>
   ${fresh ? `<div class="banner">📋 Nuevo mes. Tus categorías y límites vienen de <b>${esc(monthName(m._copiedFrom))}</b>; los gastos empiezan en cero.</div>` : ''}
@@ -827,10 +838,10 @@ function budgetColumns(m,k){
     const hp=c.pl/max*H, ha=c.ac>0 ? Math.max(10, Math.min(c.ac,max)/max*H) : 0;
     return `<button class="colb" data-act="filterCat" data-v="${esc(c.it.id)}" aria-label="${esc(c.it.name)}: ${money(c.ac)} de ${money(c.pl)}">
       <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '&nbsp;'}</span>
-      <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':`color-mix(in srgb, ${col} 75%, var(--card))`}"></span></span>
+      <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':c.pl>0&&c.ac>c.pl*0.85?'var(--orange)':'color-mix(in srgb, var(--spend) 55%, var(--card))'}"></span></span>
       ${avatar(emojiOf(c.it,c.kind), col, 'sm')}
       <span class="amt">${esc(moneyShort(c.ac))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(c.pl))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
-    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--blue)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
+    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:color-mix(in srgb, var(--spend) 55%, var(--card))"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
 }
 function donutCard(spend, total){
   const head=`<div class="sech"><span>¿En qué se te va la plata?</span></div>`;
@@ -868,7 +879,7 @@ function groupHtml(m,k,g,t){
       else if (last>0) sub=`El mes pasado: ${money(last,c)} · toca para pagarlo`;
       else sub='Toca para anotar un gasto';
     }
-    const barCol = (g.kind==='fixed'||g.kind==='variable') && rem<0 ? 'var(--red)' : col;
+    const barCol = (g.kind==='fixed'||g.kind==='variable') ? (rem<0 ? 'var(--red)' : pct>85 ? 'var(--orange)' : 'var(--spend)') : col;
     return `<button class="cell" data-act="item" data-g="${g.kind}" data-id="${esc(it.id)}">
       ${avatar(emojiOf(it,g.kind), col)}
       <div class="main">
@@ -888,7 +899,7 @@ function groupHtml(m,k,g,t){
     const vc = S.settings.investView || base(), plV=conv(pl,base(),vc,trm), acV=conv(ac,base(),vc,trm), pct=plV>0?Math.min(100,acV/plV*100):100;
     goalRow = `<div class="cell goalbar" style="display:block">
       <div class="row1"><span class="t" style="font-weight:600">🎯 Aporte del mes</span>${seg('settings','investView',vc)}</div>
-      <div class="row1" style="margin-top:10px"><span class="v orange" style="font-size:20px">${money(acV,vc)}</span><span class="muted">de ${money(plV,vc)}</span></div>
+      <div class="row1" style="margin-top:10px"><span class="v inv" style="font-size:20px">${money(acV,vc)}</span><span class="muted">de ${money(plV,vc)}</span></div>
       <div class="meter" style="margin-top:8px"><i style="width:${pct.toFixed(1)}%"></i></div>
       <div class="row1 s" style="margin-top:8px"><span class="${acV>=plV?'green':''}">${acV>=plV ? 'Cumpliste el aporte del mes ✓' : `Te faltan ${money(plV-acV,vc)}`}</span><span>${Math.round(pct)} %</span></div>
     </div>`;
@@ -938,7 +949,7 @@ function ruleCard(m,k,t){
   if (P.inc<=0) return `<div class="sec">${head}<button class="card" data-act="rule" style="color:var(--label2)">Registra en <b style="color:var(--label)">Ingresos</b> lo que te llega y aquí te digo cuánto puedes gastar y cuánto ahorrar. <span style="color:var(--blue)">Ver planes</span></button></div>`;
   const cols=['n','g','s'].map(key=>{
     const ac=P.bt[key][1], L=P.lim[key], pct=L?Math.min(100,ac/L*100):0;
-    const color = key==='s' ? 'var(--green)' : ac>L ? 'var(--red)' : pct>85 ? 'var(--orange)' : 'var(--blue)';
+    const color = key==='s' ? 'var(--inv)' : ac>L ? 'var(--red)' : pct>85 ? 'var(--orange)' : 'var(--spend)';
     return `<div class="pcol"><div class="l">${key==='n'?'Necesidades':key==='g'?'Gustos':'Ahorro'}</div><div class="v fit ${key!=='s'&&ac>L?'red':''}">${esc(moneyShort(ac))}</div>
       <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div><div class="s">${key==='s'?'mín.':'de'} ${esc(moneyShort(L))}</div></div>`;
   }).join('');
@@ -954,8 +965,8 @@ function planSheetBody(){
   const rows=['n','g','s'].map(key=>{
     const ac=P.bt[key][1], L=P.lim[key], pct=L?Math.min(100,ac/L*100):0;
     if (key==='s') return `<div class="cell" style="display:block"><div class="row1"><span>${BUCKET.s} (${r.s} %)</span><span class="v">mínimo ${money(L)}</span></div>
-      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:var(--green)"></i></div><div class="s" style="margin-top:6px">Llevas ${money(ac)}${ac<L-0.5?` · te faltan ${money(L-ac)}`:' ✓'}</div></div>`;
-    const color=ac>L?'var(--red)':pct>85?'var(--orange)':'var(--blue)';
+      <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:var(--inv)"></i></div><div class="s" style="margin-top:6px">Llevas ${money(ac)}${ac<L-0.5?` · te faltan ${money(L-ac)}`:' ✓'}</div></div>`;
+    const color=ac>L?'var(--red)':pct>85?'var(--orange)':'var(--spend)';
     return `<div class="cell" style="display:block"><div class="row1"><span>${BUCKET[key]} (${key==='n'?r.n:r.g} %)</span><span class="v">hasta ${money(L)}</span></div>
       <div class="pbar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div><div class="s" style="margin-top:6px">Gastaste <span class="${ac>L?'red':''}">${money(ac)}</span>${ac<=L?` · te quedan ${money(L-ac)}`:` · te pasaste ${money(ac-L)}`}</div></div>`;
   }).join('');
@@ -995,7 +1006,7 @@ function viewTx(){
   for (const x of chartTx){ const d=Number((x.date||'').slice(8,10)); if (d>=1 && d<=dim) days[d-1]+=inBase(x); }
   const maxD=Math.max(...days,1), W=340, H=86, bw=W/dim;
   const todayD = k===todayKey ? now.getDate() : 0;
-  const color = kind==='ingreso' ? 'var(--green)' : kind==='inv' ? 'var(--orange)' : 'var(--blue)';
+  const color = kind==='ingreso' ? 'var(--green)' : kind==='inv' ? 'var(--inv)' : 'var(--spend)';
   const bars = days.map((v,i)=>{ const h=v>0?Math.max(3,v/maxD*(H-20)):2; return `<rect x="${(i*bw+1).toFixed(1)}" y="${(H-16-h).toFixed(1)}" width="${Math.max(1,bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${v>0?color:'var(--fill)'}" opacity="${!todayD||i+1===todayD||v===0?1:.55}"/>`; }).join('');
   const ticks=[1,Math.ceil(dim/2),dim].map(d=>`<text x="${((d-.5)*bw).toFixed(1)}" y="${H-2}" text-anchor="middle" font-size="10" fill="var(--label2)" font-family="var(--font)">${d}</text>`).join('');
   // grouped list
@@ -1007,7 +1018,7 @@ function viewTx(){
   };
   const txRow = x => {
     const fi=findItem(m,x.itemId), it=fi&&fi.it, kd=fi?fi.kind:'variable', c=x.cur||(it?itemCur(it):'COP');
-    const sign = kd==='income' ? '+' : '−', cls = kd==='income' ? 'green' : kd==='invest' ? 'orange' : '';
+    const sign = kd==='income' ? '+' : '−', cls = kd==='income' ? 'green' : kd==='invest' ? 'inv' : '';
     return `<button class="cell" data-act="editTx" data-id="${esc(x.id)}">${avatar(it?emojiOf(it,kd):'❔', it?colorOf(it,kd):'#8E8E93')}
       <div class="main"><div class="t">${it?esc(it.name):'Sin categoría'}</div><div class="s t">${esc(x.note || GNAME[kd] || '')}</div></div>
       <div class="v ${cls}" style="font-weight:600">${sign} ${money(x.amount,c)}${c!==b?`<small>≈ ${money(conv(x.amount,c,b,trm))}</small>`:''}</div></button>`;
@@ -1089,7 +1100,7 @@ function viewGoal(){
       <div class="distleg">${g.accts.map(x=>`<span><span class="dot" style="background:${x.color}"></span>${esc(x.a.name)} ${Math.round(Math.max(0,x.now)/totalPos*100)} %</span>`).join('')}</div>` : ''}
     <div class="goalrow">
       <svg viewBox="0 0 80 80" role="img" aria-label="${pct.toFixed(0)} % de la meta"><circle cx="40" cy="40" r="${R}" fill="none" stroke="var(--fill)" stroke-width="9"/>
-        ${pct>0?`<circle cx="40" cy="40" r="${R}" fill="none" stroke="var(--orange)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C*pct/100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 40 40)"/>`:''}
+        ${pct>0?`<circle cx="40" cy="40" r="${R}" fill="none" stroke="var(--inv)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C*pct/100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 40 40)"/>`:''}
         <text x="40" y="45" text-anchor="middle" font-size="15" font-weight="700" fill="var(--label)" font-family="var(--font)">${pct<10?pctTxt(Math.round(pct*10)/10):Math.round(pct)}%</text></svg>
       <div style="min-width:0"><div style="font-weight:600">🎯 ${esc(gl.name)}</div>
         <div class="s">Meta ${money(gl.target,gc)} en ${esc(endName)}</div>
@@ -1131,7 +1142,7 @@ function viewGoal(){
 
   ${hasGoal ? `<div class="sec"><div class="sech"><span>Este mes</span></div><div class="list">
     <div class="cell"><div class="main">Debes aportar<div class="s">Para llegar en ${esc(endName)}</div></div><div class="v" style="font-weight:600">${money(g.need,gc)}</div></div>
-    ${g.goalAccts.map(x=>`<div class="cell">${avatar(x.a.emoji||'💰',x.color,'sm')}<div class="main">Aportaste a ${esc(x.a.name)}</div><div class="v orange">${money(x.put,x.cur)}</div></div>`).join('')}
+    ${g.goalAccts.map(x=>`<div class="cell">${avatar(x.a.emoji||'💰',x.color,'sm')}<div class="main">Aportaste a ${esc(x.a.name)}</div><div class="v inv">${money(x.put,x.cur)}</div></div>`).join('')}
     <div class="cell"><div class="main">${g.put>=g.need?'Cumpliste ✓':'Te falta'}</div><div class="v ${g.put>=g.need?'green':'red'}" style="font-weight:600">${g.put>=g.need?(g.put>g.need?'+'+money(g.put-g.need,gc):'—'):money(g.need-g.put,gc)}</div></div>
     <button class="cell blue" data-act="goalTx">${plusIc}<span>Registrar un aporte</span></button>
   </div><div class="foot">Si aportas más, los siguientes meses te piden menos, y al revés.</div></div>
@@ -1149,7 +1160,7 @@ function viewGoal(){
   </div></div>
 
   ${hasGoal ? `<div class="sec"><div class="sech"><span>Proyección de tu meta</span></div><div class="chart">${chartSvg(g)}
-    <div class="legend"><span><i style="background:var(--orange)"></i>Lo que tienes</span><span><i style="background:var(--blue)"></i>Si aportas lo necesario</span>${g.paceP!=null?'<span><i style="background:var(--label2)"></i>Si sigues aportando igual</span>':''}</div></div>
+    <div class="legend"><span><i style="background:var(--inv)"></i>Lo que tienes</span><span><i style="background:var(--green)"></i>Si aportas lo necesario</span>${g.paceP!=null?'<span><i style="background:var(--label2)"></i>Si sigues aportando igual</span>':''}</div></div>
     <div class="foot">La línea punteada horizontal es tu meta. Si la línea gris la cruza antes del final, llegas a tiempo. Tus aportes nuevos se calculan al ${pctTxt(blendedEA())} % EA, el promedio de tus cuentas.</div></div>
 
   <div class="sec"><div class="sech"><span>Tus aportes y saldos</span></div><div class="list">
@@ -1191,10 +1202,10 @@ function chartSvg(g){
     <line x1="${L}" x2="${W-R}" y1="${y(gl.target).toFixed(1)}" y2="${y(gl.target).toFixed(1)}" stroke="var(--label)" stroke-opacity=".45" stroke-dasharray="4 4"/>
     <text x="${L+4}" y="${(y(gl.target)-5).toFixed(1)}" font-size="10" font-weight="600" fill="var(--label)" font-family="var(--font)">Meta ${compact(gl.target)}</text>
     ${pace.length>1?`<path d="${path(pace)}" fill="none" stroke="var(--label2)" stroke-width="1.6" stroke-dasharray="2 3"/>`:''}
-    <path d="${path(plan)}" fill="none" stroke="var(--blue)" stroke-width="2"/>
-    <path d="${path(hist)}L${x(last[0]).toFixed(1)},${y(0).toFixed(1)}L${x(s0-1).toFixed(1)},${y(0).toFixed(1)}Z" fill="var(--orange)" opacity=".16"/>
-    <path d="${path(hist)}" fill="none" stroke="var(--orange)" stroke-width="2.4" stroke-linejoin="round"/>
-    <circle cx="${x(last[0]).toFixed(1)}" cy="${y(last[1]).toFixed(1)}" r="4" fill="var(--orange)" stroke="var(--card)" stroke-width="2"/>
+    <path d="${path(plan)}" fill="none" stroke="var(--green)" stroke-width="2"/>
+    <path d="${path(hist)}L${x(last[0]).toFixed(1)},${y(0).toFixed(1)}L${x(s0-1).toFixed(1)},${y(0).toFixed(1)}Z" fill="var(--inv)" opacity=".14"/>
+    <path d="${path(hist)}" fill="none" stroke="var(--inv)" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="${x(last[0]).toFixed(1)}" cy="${y(last[1]).toFixed(1)}" r="4" fill="var(--inv)" stroke="var(--card)" stroke-width="2"/>
   </svg>`;
 }
 
@@ -1204,7 +1215,7 @@ function viewMore(){
   const hist = ks.length ? ks.map(k=>{
     const t=totals(S.months[k],k), spent=t.fixed[1]+t.variable[1], plan=t.fixed[0]+t.variable[0], net=t.income[1]-spent-t.invest[1];
     return `<button class="cell" data-act="goMonth" data-v="${k}">${avatar('🗓️', net<0?'#FF453A':'#30D158','sm')}<div class="main"><div class="t">${esc(cap(monthName(k)))}</div>
-      <div class="s">Gastaste <span class="${spent>plan&&plan>0?'red':''}">${money(spent)}</span> · invertiste <span class="orange">${money(t.invest[1])}</span></div></div>
+      <div class="s">Gastaste <span class="${spent>plan&&plan>0?'red':''}">${money(spent)}</span> · invertiste <span class="inv">${money(t.invest[1])}</span></div></div>
       <div class="v ${net<0?'red':'green'}" style="font-weight:600">${money(net)}<small>sobrante</small></div><span class="arrow">${IC.chev}</span></button>`;}).join('')
     : `<p class="empty" style="padding:16px">Aquí verás el resumen de cada mes en cuanto guardes tu primer presupuesto.</p>`;
   return `
@@ -1213,6 +1224,13 @@ function viewMore(){
   <div class="sec"><div class="sech"><span>🧭 Plan de ahorro</span></div><div class="list">
     <button class="cell" data-act="rule">${avatar('🧭','#5E5CE6')}<div class="main">${esc(r.name)}<div class="s">${r.n} % necesidades · ${r.g} % gustos · ${r.s} % ahorro</div></div><span class="arrow">${IC.chev}</span></button>
   </div></div>
+  <div class="sec"><div class="sech"><span>🎨 Qué significa cada color</span></div><div class="list">
+    <div class="cell"><span class="cdot" style="background:var(--green)"></span><div class="main">Verde<div class="s">Plata que entra y lo que te queda. Te recuerda que vas bien.</div></div></div>
+    <div class="cell"><span class="cdot" style="background:var(--inv)"></span><div class="main">Índigo<div class="s">Tu inversión y tu meta: tu yo del futuro.</div></div></div>
+    <div class="cell"><span class="cdot" style="background:var(--spend)"></span><div class="main">Gris<div class="s">Gastos normales. Gastar no es malo; solo se registra.</div></div></div>
+    <div class="cell"><span class="cdot" style="background:var(--orange)"></span><div class="main">Ámbar<div class="s">Cuidado: estás cerca del límite o te queda poco del mes.</div></div></div>
+    <div class="cell"><span class="cdot" style="background:var(--red)"></span><div class="main">Rojo<div class="s">Exceso: te pasaste del límite o gastaste más de lo que te llegó.</div></div></div>
+  </div><div class="foot">El rojo se usa poco a propósito, para que cuando aparezca te llame la atención. El azul solo marca botones.</div></div>
   <div class="sec"><div class="sech"><span>🎨 Apariencia</span></div><div class="list">
     <div class="cell"><span>Tema</span><span style="flex:1"></span>${seg('settings','theme',s.theme||'auto',['auto','light','dark'],false,{auto:'Auto',light:'Claro',dark:'Oscuro'})}</div>
   </div><div class="foot">Auto sigue el modo claro u oscuro de tu iPhone.</div></div>
