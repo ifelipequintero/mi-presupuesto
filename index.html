@@ -288,6 +288,8 @@ button.stat:active{background:var(--fill)}
 .toast button{color:var(--blue);font-weight:700}
 .goalbar .seg button{padding:3px 10px;font-size:13px}
 .cdot{width:14px;height:14px;border-radius:50%;flex:none}
+.hero .seg button,.segsm .seg button{padding:3px 10px;font-size:13px}
+.segsm{text-transform:none}
 </style>
 </head>
 <body>
@@ -296,7 +298,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '21';
+const APP_VERSION = '22';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
@@ -801,6 +803,7 @@ function viewHome(){
   // the bar is your income: each color is a category, orange is what you invested, grey is what is left
   const segBase=Math.max(t.income[1], spentA+t.invest[1])||1;
   const perDay = daysLeft>0 && avail>0 ? avail/daysLeft : 0;
+  const hc = S.settings.heroView || b, hv = n => conv(n, b, hc, trm);
   // color psychology: green = healthy margin, amber = getting tight, red = spending more than what came in
   const share = t.income[1]>0 ? avail/t.income[1] : null;
   const health = share==null ? {cls:'', msg:''}
@@ -811,15 +814,15 @@ function viewHome(){
   const showTrm = usesUSD(m) || b==='USD';
   return `
   <section class="hero">
-    <div class="eyebrow">${avail>=0 ? 'Te queda este mes' : 'Te pasaste este mes por'}</div>
-    <div class="big fit ${health.cls}">${moneyBig(Math.abs(avail))}</div>
-    <div class="s">${t.income[1]>0 ? `De ${money(t.income[1])} que te llegaron${perDay?` · <b>≈ ${money(perDay)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}</div>
+    <div class="row1"><div class="eyebrow">${avail>=0 ? 'Te queda este mes' : 'Te pasaste este mes por'}</div>${seg('settings','heroView',hc)}</div>
+    <div class="big fit ${health.cls}">${moneyBig(hv(Math.abs(avail)),hc)}</div>
+    <div class="s">${t.income[1]>0 ? `De ${money(hv(t.income[1]),hc)} que te llegaron${perDay?` · <b>≈ ${money(hv(perDay),hc)} por día</b>`:''}` : 'Registra lo que te llega en Ingresos y aquí verás cuánto te queda.'}</div>
     ${t.income[1]>0 || spentA>0 ? `<div class="segbar" aria-hidden="true"><i style="width:${(spentA/segBase*100).toFixed(2)}%;background:var(--spend)"></i><i style="width:${(t.invest[1]/segBase*100).toFixed(2)}%;background:var(--inv)"></i><i style="width:${(Math.max(0,avail)/segBase*100).toFixed(2)}%;background:var(--green)"></i></div>
       <div class="distleg"><span><span class="dot" style="background:var(--spend)"></span>Gastos</span><span><span class="dot" style="background:var(--inv)"></span>Inversión</span><span><span class="dot" style="background:var(--green)"></span>Te queda</span></div>` : ''}
     <div class="stats">
-      <button class="stat" data-act="seeTx" data-v="ingreso"><div class="l">💰 Te llegó</div><div class="v fit green">${money(t.income[1])}</div><div class="s">${t.income[0]>0?`de ${moneyShort(t.income[0])}`:'&nbsp;'}</div></button>
-      <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastaste</div><div class="v fit ${t.income[1]>0 && spentA>t.income[1] ? 'red' : ''}">${money(spentA)}</div><div class="s">${nTx} gasto${nTx===1?'':'s'}</div></button>
-      <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertiste</div><div class="v fit inv">${money(t.invest[1])}</div><div class="s">${t.invest[0]>0?`de ${moneyShort(t.invest[0])}`:'&nbsp;'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="ingreso"><div class="l">💰 Te llegó</div><div class="v fit green">${money(hv(t.income[1]),hc)}</div><div class="s">${t.income[0]>0?`de ${moneyShort(hv(t.income[0]),hc)}`:'&nbsp;'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="gasto"><div class="l">🧾 Gastaste</div><div class="v fit ${t.income[1]>0 && spentA>t.income[1] ? 'red' : ''}">${money(hv(spentA),hc)}</div><div class="s">${nTx} gasto${nTx===1?'':'s'}</div></button>
+      <button class="stat" data-act="seeTx" data-v="inv"><div class="l">📈 Invertiste</div><div class="v fit inv">${money(hv(t.invest[1]),hc)}</div><div class="s">${t.invest[0]>0?`de ${moneyShort(hv(t.invest[0]),hc)}`:'&nbsp;'}</div></button>
     </div>
   </section>
   ${fresh ? `<div class="banner">📋 Nuevo mes. Tus categorías y límites vienen de <b>${esc(monthName(m._copiedFrom))}</b>; los gastos empiezan en cero.</div>` : ''}
@@ -842,7 +845,8 @@ function budgetColumns(m,k){
     if (pl>0 || ac>0) cols.push({it, kind:g, pl, ac});
   }
   const anyLimit = cols.some(c=>c.pl>0);
-  const head=`<div class="sech"><span>${anyLimit?'Gastos vs. límite':'¿En qué gastaste?'}</span>${cols.length?'<b>Toca una categoría</b>':''}</div>`;
+  const cc = S.settings.colsView || b, cv = n => conv(n, b, cc, trm);
+  const head=`<div class="sech"><span>${anyLimit?'Gastos vs. límite':'¿En qué gastaste?'}</span>${cols.length?`<span class="segsm">${seg('settings','colsView',cc)}</span>`:''}</div>`;
   if (!cols.length) return `<div class="sec">${head}<div class="card empty">📊 Cuando anotes gastos verás aquí en qué se te va la plata.</div></div>`;
   cols.sort((x,y)=>Math.max(y.pl,y.ac)-Math.max(x.pl,x.ac));
   const max=Math.max(...cols.map(c=>Math.max(c.pl,c.ac)))||1, H=130;
@@ -853,7 +857,7 @@ function budgetColumns(m,k){
       <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '&nbsp;'}</span>
       <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':c.pl>0&&c.ac>c.pl*0.85?'var(--orange)':'var(--spend)'}"></span></span>
       ${avatar(emojiOf(c.it,c.kind), iconColor(c.it,c.kind), 'sm')}
-      <span class="amt">${esc(moneyShort(c.ac))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(c.pl))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
+      <span class="amt">${esc(moneyShort(cv(c.ac),cc))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(cv(c.pl),cc))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
     <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--spend)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
 }
 function donutCard(spend, total){
