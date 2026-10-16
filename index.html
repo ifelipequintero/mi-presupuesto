@@ -263,6 +263,11 @@ button.stat:active{background:var(--fill)}
 .colb .pc{font-size:11px;font-weight:600;color:var(--label2)}
 .colb .amt{font-size:12.5px;font-weight:700;white-space:nowrap}
 .colb .of{font-size:10.5px;color:var(--label2);white-space:nowrap;margin-top:-5px}
+.colb .amt.red,.colb .pc.red{color:var(--red)}
+.overline{display:block;width:calc(100% - 12px);margin:0 6px 12px;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,var(--red) 12%,transparent);text-align:left}
+.overline b{display:block;color:var(--red);font-size:14px}
+.overline span{font-size:12.5px;color:var(--label2)}
+.colnote{font-size:11.5px;color:var(--label3);padding:6px 6px 0}
 .chipgrid.hscroll.one{grid-template-rows:auto}
 
 .why{margin-top:12px;border-top:.5px solid var(--sep);padding-top:10px;font-size:14px;color:var(--label2)}
@@ -298,7 +303,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '22';
+const APP_VERSION = '23';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
@@ -842,23 +847,36 @@ function budgetColumns(m,k){
   const trm=trmOf(k), b=base(), cols=[];
   for (const g of ['fixed','variable']) for (const it of (m.groups[g]||[])){
     const pl=conv(it.planned,itemCur(it),b,trm), ac=conv(actualOf(m,it,trm),itemCur(it),b,trm);
-    if (pl>0 || ac>0) cols.push({it, kind:g, pl, ac});
+    if (pl>0 || ac>0) cols.push({it, kind:g, pl, ac, bk:bucketOf(it,g)});
   }
-  const anyLimit = cols.some(c=>c.pl>0);
+  // Las categorías sin límite propio toman su parte del plan de ahorro (Necesidades / Gustos)
+  const t=totals(m,k), inc=t.income[0]||t.income[1], r=activeRule(), over={};
+  if (inc>0) for (const bk of ['n','g']){
+    const L=inc*r[bk]/100, mine=cols.filter(c=>c.bk===bk), spent=mine.reduce((s,c)=>s+c.ac,0);
+    if (spent>L+0.5) over[bk]={L, spent};
+    const free=mine.filter(c=>!(c.pl>0) && c.ac>0); if (!free.length) continue;
+    const room=L-mine.filter(c=>c.pl>0).reduce((s,c)=>s+c.pl,0), fs=free.reduce((s,c)=>s+c.ac,0);
+    for (const c of free){ c.fromPlan=true; c.pl=Math.max(0,room)*c.ac/fs; }
+  }
+  const anyLimit = cols.some(c=>c.pl>0||c.fromPlan);
   const cc = S.settings.colsView || b, cv = n => conv(n, b, cc, trm);
   const head=`<div class="sech"><span>${anyLimit?'Gastos vs. límite':'¿En qué gastaste?'}</span>${cols.length?`<span class="segsm">${seg('settings','colsView',cc)}</span>`:''}</div>`;
   if (!cols.length) return `<div class="sec">${head}<div class="card empty">📊 Cuando anotes gastos verás aquí en qué se te va la plata.</div></div>`;
   cols.sort((x,y)=>Math.max(y.pl,y.ac)-Math.max(x.pl,x.ac));
   const max=Math.max(...cols.map(c=>Math.max(c.pl,c.ac)))||1, H=130;
-  return `<div class="sec">${head}<div class="card" style="padding:14px 8px 12px"><div class="cols hscroll" id="hs-cols">${cols.map(c=>{
-    const col=colorOf(c.it,c.kind), over=c.pl>0 && c.ac>c.pl+0.5;
+  const alerts=Object.keys(over).map(bk=>{ const o=over[bk];
+    return `<button class="overline" data-act="planInfo"><b>${bk==='n'?'Necesidades':'Gustos'}: te pasaste ${esc(moneyShort(cv(o.spent-o.L),cc))}</b><span>${esc(moneyShort(cv(o.spent),cc))} de ${esc(moneyShort(cv(o.L),cc))} · ${Math.round(o.spent/o.L*100)} % de tu plan</span></button>`; }).join('');
+  return `<div class="sec">${head}<div class="card" style="padding:14px 8px 12px">${alerts}<div class="cols hscroll" id="hs-cols">${cols.map(c=>{
+    const col=colorOf(c.it,c.kind), lim=c.pl>0||c.fromPlan, isOver=lim && c.ac>c.pl+0.5;
     const hp=c.pl/max*H, ha=c.ac>0 ? Math.max(10, Math.min(c.ac,max)/max*H) : 0;
+    const pc = !lim ? '&nbsp;' : c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : 'Sin cupo';
     return `<button class="colb" data-act="filterCat" data-v="${esc(c.it.id)}" aria-label="${esc(c.it.name)}: ${money(c.ac)} de ${money(c.pl)}">
-      <span class="pc ${over?'red':''}">${c.pl>0 ? Math.round(c.ac/c.pl*100)+' %' : '&nbsp;'}</span>
-      <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${over?'var(--red)':c.pl>0&&c.ac>c.pl*0.85?'var(--orange)':'var(--spend)'}"></span></span>
+      <span class="pc ${isOver?'red':''}">${pc}</span>
+      <span class="track">${c.pl>0?`<span class="plan" style="height:${hp.toFixed(1)}px"></span>`:''}<span class="fill" style="height:${ha.toFixed(1)}px;background:${isOver?'var(--red)':lim&&c.ac>c.pl*0.85?'var(--orange)':'var(--spend)'}"></span></span>
       ${avatar(emojiOf(c.it,c.kind), iconColor(c.it,c.kind), 'sm')}
-      <span class="amt">${esc(moneyShort(cv(c.ac),cc))}</span><span class="of">${c.pl>0?`de ${esc(moneyShort(cv(c.pl),cc))}`:'&nbsp;'}</span></button>`; }).join('')}</div>
-    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--spend)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div></div></div>`;
+      <span class="amt ${isOver?'red':''}">${esc(moneyShort(cv(c.ac),cc))}</span><span class="of">${lim?`de ${esc(moneyShort(cv(c.pl),cc))}${c.fromPlan?'*':''}`:'&nbsp;'}</span></button>`; }).join('')}</div>
+    <div class="legend" style="padding:10px 6px 0">${anyLimit?`<span><i style="height:9px;width:12px;background:none;border:1.5px dashed var(--label3);border-radius:3px"></i>Límite</span>`:''}<span><i style="height:9px;width:12px;border-radius:3px;background:var(--spend)"></i>Gastado</span>${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--orange)"></i>Cerca del límite</span>`:''}${anyLimit?`<span><i style="height:9px;width:12px;border-radius:3px;background:var(--red)"></i>Te pasaste</span>`:''}</div>
+    ${cols.some(c=>c.fromPlan)?`<div class="colnote">* Sin límite propio: usa lo que le queda de tu plan de ahorro.</div>`:''}</div></div>`;
 }
 function donutCard(spend, total){
   const head=`<div class="sech"><span>¿En qué se te va la plata?</span></div>`;
