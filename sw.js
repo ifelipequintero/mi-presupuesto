@@ -1,6 +1,6 @@
 // Always ask the network for the newest version (skipping the browser cache);
 // fall back to the saved copy only when there is no internet.
-const CACHE = 'mi-presupuesto-v20';
+const CACHE = 'mi-presupuesto-v21';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, {cache:'reload'}))))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

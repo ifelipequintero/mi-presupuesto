@@ -39,7 +39,8 @@
 body{margin:0}
 [hidden]{display:none!important}
 img{max-width:100%}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;touch-action:manipulation}
+button,a,label,input,select,textarea{touch-action:manipulation}
 body{background:var(--bg);color:var(--label);font-family:var(--font);font-size:17px;line-height:1.3;letter-spacing:-.01em}
 .n{font-variant-numeric:tabular-nums}
 button,input,select,textarea{font:inherit;color:inherit;letter-spacing:inherit}
@@ -226,7 +227,7 @@ button.stat:active{background:var(--fill)}
 .metarow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .dchip{padding:8px 13px;border-radius:999px;background:var(--card);font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:4px}
 .dchip[aria-pressed="true"],.dchip.on{background:var(--label);color:var(--bg)}
-.dchip input{border:0;background:transparent;font:inherit;color:inherit;padding:0;max-width:140px;min-width:0}
+.dchip input{border:0;background:transparent;font:inherit;font-size:16px;color:inherit;padding:0;max-width:150px;min-width:0}
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 12px}
 .keypad button{height:52px;border-radius:14px;background:var(--card);font-size:24px;font-weight:500;font-variant-numeric:tabular-nums}
 .keypad button:active{background:var(--fill)}
@@ -295,7 +296,7 @@ button.stat:active{background:var(--fill)}
 
 <script>
 (() => {
-const APP_VERSION = '20';
+const APP_VERSION = '21';
 /* ================= model ================= */
 const GROUPS = [
   {kind:'income',  name:'Ingresos',         act:'Recibido', color:'var(--green)'},
